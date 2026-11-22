@@ -18,6 +18,16 @@ export async function migrate(databaseUrl: string, { log = true } = {}) {
     if (state.applied.length === 0 && state.foreign.length && process.env.ALLOW_SHARED_DATABASE !== '1') {
       throw new MigrationConflict(conflictMessage(state) + '\n  (Si de verdad quieres compartir esta base, define ALLOW_SHARED_DATABASE=1; no se recomienda.)');
     }
+    // Esquema ya creado a mano (p. ej. pegando el SQL en el editor de Supabase): se registra sin volver a ejecutarlo
+    for (const version of state.adoptable) {
+      await sql.begin(async (tx) => {
+        await tx`create table if not exists schema_migrations (version text primary key, applied_at timestamptz not null default now())`;
+        await tx`alter table schema_migrations enable row level security`;
+        await tx`insert into schema_migrations (version) values (${version}) on conflict do nothing`;
+      });
+      state.applied.push(version);
+      if (log) console.log(`✓ ${version}.sql ya estaba aplicada en la base (se registra, no se vuelve a ejecutar)`);
+    }
     const dir = path.resolve(__dirname, '..', 'supabase', 'migrations');
     for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
       const version = file.replace(/\.sql$/, '');

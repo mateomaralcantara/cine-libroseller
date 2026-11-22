@@ -70,6 +70,8 @@ async function main() {
       const state = await inspectDb(sql);
       if (state.conflicts.length || (state.applied.length === 0 && state.foreign.length)) {
         fail(conflictMessage(state).replace('así que NO se ha modificado nada', 'y no es una base exclusiva para esta plataforma').split('\n').join('\n    '));
+      } else if (state.adoptable.length) {
+        fail(`Las tablas de CINE LIBROSELLER ya existen pero no están registradas: ejecuta «npm run db:migrate» para registrarlas (no borra ni repite nada).`);
       } else if (state.pending.length) {
         fail(state.applied.length ? `Migraciones pendientes (${state.pending.length}): ejecuta «npm run db:migrate».` : 'La base de datos está vacía: ejecuta «npm run db:migrate».');
       } else {

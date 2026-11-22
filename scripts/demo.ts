@@ -265,7 +265,7 @@ export async function demoSeed({ log = console.log } = {}) {
     // Si algo falla a mitad, se deshace lo creado: nunca quedan datos de demostración huérfanos
     await undo(state);
     const msg = (e as Error).message;
-    const hint = /Storage|SUPABASE|bucket/i.test(msg)
+    const hint = /Storage|SUPABASE|bucket/i.test(msg) || process.env.STORAGE_DRIVER === 'supabase'
       ? ' Revisa el almacenamiento: para probar en tu PC pon STORAGE_DRIVER=local en .env.local, o crea el bucket con «npm run storage:setup».'
       : '';
     throw new Error(`No se pudo cargar la demostración (se deshizo todo lo creado): ${msg}.${hint}`);
@@ -277,10 +277,49 @@ export async function demoSeed({ log = console.log } = {}) {
 
 export async function demoClear({ log = console.log } = {}) {
   const [row] = await sql`select value from system_settings where key = 'demo'`;
-  if (!row) { log('No hay ninguna demostración cargada.'); return; }
+  if (!row) { await repairOrphans(log); return; }
   const state = row.value as DemoState;
   await undo(state);
   log(`Demostración eliminada: ${state.created.length} registros borrados y ${state.updated.length} restaurados. La serie inaugural vuelve a estar en borrador.`);
+}
+
+/**
+ * Limpia restos de una demo que falló a mitad antes de poder registrarse (versiones anteriores).
+ * Sólo toca filas con marcas inequívocas de la demo y devuelve la serie inaugural a su estado de borrador.
+ */
+async function repairOrphans(log: (m: string) => void) {
+  let removed = 0;
+  const files: string[] = [];
+  await sql.begin(async (tx) => {
+    const count = (rows: { length: number }) => { removed += rows.length; };
+    const [conv] = await tx`select * from titles where slug = 'los-convidados-al-agape'`;
+    files.push(...(await tx`delete from media_images where storage_path like 'demo/%' returning storage_path`).map((r) => r.storage_path));
+    files.push(...(await tx`delete from subtitle_tracks where storage_path like 'demo/%' returning storage_path`).map((r) => r.storage_path));
+    count(files);
+    count(await tx`delete from trailers where id in (select owner_id from video_assets where owner_type = 'trailer' and original_filename = 'demo') returning id`);
+    count(await tx`delete from video_assets where original_filename = 'demo' returning id`);
+    count(await tx`delete from media_comparisons where rights_note = 'Imágenes generadas para la demo' returning id`);
+    count(await tx`delete from titles where external_ref like 'demo:%' returning id`);
+    count(await tx`delete from people where slug like 'demo-%' returning id`);
+    count(await tx`delete from content_rights where holder like '%(demo)' returning id`);
+    if (conv) {
+      count(await tx`delete from characters where title_id = ${conv.id} and slug like 'demo-%' returning id`);
+      count(await tx`delete from release_schedules where title_id = ${conv.id} and headline in ('Estreno del episodio 2', 'Episodio 3') returning id`);
+      count(await tx`delete from episodes where title_id = ${conv.id} and name in ('El banquete de los ausentes', 'Lo que el agua recuerda') returning id`);
+      count(await tx`delete from featured_content where title_id = ${conv.id} and headline = 'Gran estreno' returning id`);
+      if (conv.tagline === 'Nadie sube a la montaña sin una pregunta.') {
+        await tx`update titles set status = 'draft', tagline = null, synopsis_short = null, synopsis_long = null, age_rating = null,
+          release_date = null, published_at = null, publish_at = null, source_book = null where id = ${conv.id}`;
+        await tx`update seasons set status = 'draft', synopsis = null where title_id = ${conv.id} and synopsis = 'La invitación, la subida y la primera noche en el refugio.'`;
+        await tx`update episodes set status = 'draft', published_at = null, synopsis = null where title_id = ${conv.id} and synopsis like 'Matías recibe una carta%'`;
+        await tx`update release_schedules set status = 'announced', is_public = false where title_id = ${conv.id} and status = 'released' and headline = 'Estreno del episodio 1'`;
+        removed++;
+      }
+    }
+    await tx`delete from collection_items where title_id not in (select id from titles)`;
+  });
+  for (const f of files) await deleteObject(f).catch(() => {});
+  log(removed ? `Se limpiaron restos de una demostración incompleta (${removed} elementos). La serie inaugural vuelve a estar en borrador.` : 'No hay ninguna demostración cargada.');
 }
 
 async function undo(state: DemoState) {

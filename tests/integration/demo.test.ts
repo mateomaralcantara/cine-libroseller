@@ -4,6 +4,10 @@ import { sql } from '@/lib/db';
 import { getHomeSections, upcomingReleases, searchCatalog } from '@/lib/catalog/public';
 import { resolvePlayback } from '@/lib/playback';
 import { demoSeed, demoClear } from '../../scripts/demo';
+import postgres from 'postgres';
+import fs from 'node:fs';
+import { migrate } from '../../scripts/migrate';
+import { seed } from '../../scripts/seed';
 
 const quiet = { log: () => {} };
 const snapshot = async () => ({
@@ -52,5 +56,32 @@ describe('modo demostración', () => {
     await expect(demoSeed(quiet)).rejects.toThrow(/no la toca/);
     const [{ n }] = await sql`select count(*)::int as n from titles`;
     expect(n).toBe(1);
+  });
+
+  it('repara una demo antigua que quedó a medias (serie publicada sin imágenes)', async () => {
+    await sql`delete from media_images`;
+    await sql`update titles set status = 'published', published_at = now(), tagline = 'Nadie sube a la montaña sin una pregunta.' where slug = 'los-convidados-al-agape'`;
+    await expect(demoSeed(quiet)).rejects.toThrow(/no la toca/);
+    await demoClear(quiet);
+    const [t] = await sql`select status, tagline from titles where slug = 'los-convidados-al-agape'`;
+    expect(t).toEqual({ status: 'draft', tagline: null });
+    await demoSeed(quiet);
+    await demoClear(quiet);
+  });
+});
+
+describe('esquema creado a mano (editor SQL de Supabase)', () => {
+  it('db:migrate lo reconoce y lo registra sin volver a ejecutarlo', async () => {
+    const url = process.env.DATABASE_URL!;
+    const admin = postgres(url, { max: 1, onnotice: () => {} });
+    await admin.unsafe('drop schema public cascade; create schema public; grant all on schema public to public;');
+    for (const f of fs.readdirSync('supabase/migrations').sort()) await admin.unsafe(fs.readFileSync(`supabase/migrations/${f}`, 'utf8'));
+    await admin.end();
+    await seed(url, { log: false });
+    await migrate(url, { log: false }); // no debe fallar con «already exists»
+    const rows = await sql`select version from schema_migrations order by version`;
+    expect(rows.length).toBe(fs.readdirSync('supabase/migrations').length);
+    const [{ n }] = await sql`select count(*)::int as n from titles`;
+    expect(n).toBe(1); // los datos existentes se conservan
   });
 });

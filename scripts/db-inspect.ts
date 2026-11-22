@@ -26,6 +26,33 @@ export interface DbState {
   conflicts: { name: string; rows: number }[];
   /** Otras tablas del esquema public que no son de esta plataforma. */
   foreign: { name: string; rows: number }[];
+  /** Migraciones cuyo contenido ya está en la base (p. ej. ejecutadas a mano en el editor SQL de Supabase) pero sin registrar. */
+  adoptable: string[];
+}
+
+/** Tablas creadas por un archivo de migración concreto. */
+function tablesOf(file: string): string[] {
+  const sql = fs.readFileSync(path.join(MIGRATIONS, `${file}.sql`), 'utf8');
+  return [...sql.matchAll(/create table(?: if not exists)?\s+([a-z_][a-z0-9_]*)/gi)].map((m) => m[1].toLowerCase());
+}
+
+/** ¿El contenido de esta migración ya está en la base? Se comprueba con huellas propias de CINE LIBROSELLER. */
+async function alreadyPresent(sql: postgres.Sql, file: string, existing: Set<string>): Promise<boolean> {
+  const tables = tablesOf(file);
+  if (tables.length) {
+    if (!tables.every((t) => existing.has(t))) return false;
+    // Columnas características de este esquema (otra app con una tabla «titles» no las tendría)
+    const [{ n }] = await sql`select count(*)::int as n from information_schema.columns where table_schema = 'public' and (
+      (table_name = 'titles' and column_name in ('ai_disclosure', 'source_book', 'external_ref')) or
+      (table_name = 'video_assets' and column_name in ('playback_policy', 'source_url')) or
+      (table_name = 'release_schedules' and column_name = 'date_label'))`;
+    return n === 6;
+  }
+  if (/rls/.test(file)) {
+    const [{ n }] = await sql`select count(*)::int as n from pg_policies where schemaname = 'public' and policyname = 'app_owner_all' and tablename = 'titles'`;
+    return n > 0;
+  }
+  return false;
 }
 
 export async function inspectDb(sql: postgres.Sql): Promise<DbState> {
@@ -37,10 +64,13 @@ export async function inspectDb(sql: postgres.Sql): Promise<DbState> {
   const tables = await sql`select c.relname as name, greatest(c.reltuples, 0)::bigint as rows
     from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind in ('r', 'p') order by c.relname`;
   const ours = ourTables();
-  const firstApplied = applied.includes(files[0]);
-  const conflicts = firstApplied ? [] : tables.filter((t) => ours.has(t.name) && t.name !== 'schema_migrations').map((t) => ({ name: t.name as string, rows: Number(t.rows) }));
+  const existing = new Set(tables.map((t) => t.name as string));
+  const adoptable: string[] = [];
+  for (const f of pending) if (await alreadyPresent(sql, f, existing)) adoptable.push(f);
+  const schemaKnown = applied.includes(files[0]) || adoptable.includes(files[0]);
+  const conflicts = schemaKnown ? [] : tables.filter((t) => ours.has(t.name) && t.name !== 'schema_migrations').map((t) => ({ name: t.name as string, rows: Number(t.rows) }));
   const foreign = tables.filter((t) => !ours.has(t.name)).map((t) => ({ name: t.name as string, rows: Number(t.rows) }));
-  return { applied, pending, conflicts, foreign };
+  return { applied, pending: pending.filter((f) => !adoptable.includes(f)), conflicts, foreign, adoptable };
 }
 
 export function conflictMessage(state: DbState): string {
