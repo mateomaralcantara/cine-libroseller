@@ -223,7 +223,7 @@ export async function handleMuxWebhook(rawBody: string, signatureHeader: string 
 }
 
 /** Recuperación: consulta a Mux el estado real (por si un webhook se perdió). */
-export async function refreshFromProvider(actorId: string, assetId: string) {
+export async function refreshFromProvider(actorId: string, assetId: string, { quiet = false } = {}) {
   const [row] = await sql`select * from video_assets where id = ${assetId}`;
   if (!row) throw new VideoError('Video no encontrado.');
   if (row.provider !== 'mux') {
@@ -252,7 +252,7 @@ export async function refreshFromProvider(actorId: string, assetId: string) {
   } catch (e) {
     throw new VideoError(e instanceof ProviderError ? e.message : 'No se pudo consultar el proveedor.');
   }
-  await audit(actorId, 'video.refreshed', 'video_asset', assetId);
+  if (!quiet) await audit(actorId, 'video.refreshed', 'video_asset', assetId);
   return (await sql`select * from video_assets where id = ${assetId}`)[0];
 }
 

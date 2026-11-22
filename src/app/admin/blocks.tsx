@@ -95,7 +95,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
   const link = linkVideoAction.bind(null, ownerType, ownerId);
   return (
     <Panel title="Video" actions={current ? <span className="text-sm text-mist">Versión vigente: v{current.version} · <Duration seconds={current.duration_seconds} /> · {current.max_resolution ?? '—'}</span> : <span className="text-sm text-warn">Sin video aprobado</span>}>
-      <AutoRefresh active={processing} />
+      <AutoRefresh active={processing} every={8000} assetIds={assets.filter((a) => ['uploading', 'processing'].includes(a.status)).map((a) => a.id)} />
       {review && (
         <div className="mb-5 rounded-xl border border-warn/40 bg-warn/5 p-4">
           <p className="font-medium text-warn">Versión v{review.version} procesada: revísala antes de aprobarla.</p>
@@ -132,7 +132,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
                   <td><Duration seconds={a.duration_seconds} /></td>
                   <td className="max-w-[14rem] truncate text-xs text-dim">{a.original_filename ?? a.source_url}</td>
                   <td className="text-xs text-dim">{formatDate(a.created_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
-                  <td>{['uploading', 'processing', 'error', 'in_review'].includes(a.status) && <ActButton onAct={refreshVideoAction.bind(null, a.id)}>Consultar proveedor</ActButton>}</td>
+                  <td>{['uploading', 'processing', 'error'].includes(a.status) && <ActButton onAct={refreshVideoAction.bind(null, a.id)}>Consultar proveedor</ActButton>}</td>
                 </tr>
               ))}
             </tbody>

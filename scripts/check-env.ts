@@ -146,7 +146,10 @@ async function main() {
       else if (r.status === 403) fail('El token de Mux no tiene permiso de Mux Video (lectura y escritura).');
       else warn(`Mux respondió ${r.status}.`);
     } catch (e) { warn(`No se pudo contactar con Mux: ${(e as Error).message}`); }
-    if (!env('MUX_WEBHOOK_SECRET')) fail('Con Mux configurado hace falta MUX_WEBHOOK_SECRET; sin él los videos se quedan en «Procesando». (En local, Mux no puede llamar a localhost: usa «Consultar proveedor» en el panel.)');
+    if (!env('MUX_WEBHOOK_SECRET')) {
+      if (/localhost|127\.0\.0\.1/.test(env('NEXT_PUBLIC_SITE_URL') || 'http://localhost:3000')) ok('Sin MUX_WEBHOOK_SECRET: en local el panel consulta a Mux automáticamente mientras procesa (en producción configura el webhook).');
+      else fail('En producción hace falta MUX_WEBHOOK_SECRET (Mux → Settings → Webhooks → URL https://cine.libroseller.com/api/v1/webhooks/mux).');
+    }
     else ok('MUX_WEBHOOK_SECRET definido');
   }
   const kid = env('MUX_SIGNING_KEY_ID'); const pk = env('MUX_SIGNING_PRIVATE_KEY');

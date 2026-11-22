@@ -55,13 +55,18 @@ export function StatusPill({ status, video = false }: { status: string; video?: 
 }
 
 /** Recarga periódica mientras haya videos procesándose (el webhook actualiza la base de datos). */
-export function AutoRefresh({ active, every = 5000 }: { active: boolean; every?: number }) {
+export function AutoRefresh({ active, every = 5000, assetIds = [] }: { active: boolean; every?: number; assetIds?: string[] }) {
   const router = useRouter();
+  const key = assetIds.join(',');
   useEffect(() => {
     if (!active) return;
-    const t = setInterval(() => router.refresh(), every);
+    const t = setInterval(async () => {
+      // Pregunta el estado de cada video en curso (el servidor consulta a Mux si no llegó el webhook)
+      await Promise.all(key.split(',').filter(Boolean).map((id) => fetch(`/api/v1/admin/uploads/${id}`, { cache: 'no-store' }).catch(() => null)));
+      router.refresh();
+    }, every);
     return () => clearInterval(t);
-  }, [active, every, router]);
+  }, [active, every, router, key]);
   return null;
 }
 
