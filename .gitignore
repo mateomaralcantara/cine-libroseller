@@ -1,4 +1,13 @@
 node_modules/
-data/
+.next/
+out/
+storage/
 .env
+.env.local
+.env*.local
 *.log
+next-env.d.ts
+*.tsbuildinfo
+tests/e2e/artifacts/
+.next-e2e/
+storage-test/

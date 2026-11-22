@@ -1,128 +1,173 @@
-# Cine LibroSeller Studios — Hybrid Film Production OS
+# CINE LIBROSELLER — Cinema Streaming Experience
 
-> Historias humanas. Cine sin límites.
+> El futuro del cine comienza aquí.
 
-Plataforma operativa de una productora cinematográfica híbrida: capta clientes, convierte ideas, novelas y guiones en proyectos, gestiona actores reales y personajes IA, coordina rodajes (locación, croma, volumen LED), controla planos VFX/IA y continuidad, administra contratos, agenda y presupuesto, revisa versiones con el cliente hasta su aprobación, mide la rentabilidad y se conecta con **LibroSeller** y **CineViral**.
+Plataforma de streaming de las películas y series de **Cine LibroSeller Studios**: un portal público para descubrir y ver las obras, y un panel `/admin` para publicarlas sin tocar código.
 
-- Sitio público: `https://cine.libroseller.com`
-- Panel privado: `https://cine.libroseller.com/studio`
+- Sitio: `https://cine.libroseller.com`
+- Administración: `https://cine.libroseller.com/admin`
+- Obra inaugural: **Los Convidados al Ágape** (serie): temporada 1, episodio 1 «La petición en la montaña» (15 min). Se crea como **borrador sin materiales**. El equipo carga la sinopsis, el póster, el tráiler y el video oficiales desde el panel. El sistema no inventa ningún archivo.
 
-## Arranque rápido
+Esta es la **Fase 1 (Streaming MVP)**. Incluye además las piezas de la Fase 2 que exigen las pruebas obligatorias: cuentas, progreso, «Continúa viendo», Mi lista e historial. No se ha construido software de producción: eso corresponde a CineViral.
 
-Requisitos: Node.js ≥ 22.13 (usa el SQLite incorporado `node:sqlite`; no hay dependencias nativas).
+---
+
+## Qué incluye
+
+**Portal público**
+- **Portada**: billboard cinematográfico con teaser silencioso. El teaser respeta *movimiento reducido*, *ahorro de datos* y conexiones 2G/3G, y nunca activa el sonido. Debajo hay 19 secciones editoriales configurables; las vacías no se muestran. Si no hay nada publicado, aparece una portada de prelanzamiento en vez de un catálogo simulado.
+- **Ficha de cada obra**:
+  - hero, tráiler en modal, «Ver ahora» o «Continuar T1:E1», Mi lista y Compartir;
+  - sinopsis, reparto y equipo, personajes, galería, extras y comparador antes/después;
+  - libro original (LibroSeller), próximos estrenos con aviso y obras relacionadas;
+  - aviso público del uso de IA.
+- **Series**: temporadas, episodios con miniatura y progreso, página propia por episodio, anterior y siguiente.
+- **Reproductor (modo cine)**:
+  - HLS adaptativo (hls.js; nativo en Safari) y elección de calidad;
+  - pistas de audio, subtítulos WebVTT y velocidad;
+  - pantalla completa y atajos de teclado (espacio/K, J/L, flechas, M, F, C);
+  - reanudación, siguiente episodio con cuenta atrás configurable, miniaturas de navegación (storyboard de Mux);
+  - estados de carga y error con «Reintentar», que pide un token nuevo y sigue donde estaba.
+- **Búsqueda** por título, sinopsis, género, categoría, director, actor, personaje, episodio, año, país y tipo. Sin coincidencias devuelve **vacío** y sugiere lo que hay; nunca inventa obras.
+- **Próximos estrenos**: la cuenta regresiva sólo aparece con **fecha confirmada**. Los avisos se guardan con el texto del consentimiento.
+- **Detrás de cámaras**: comparaciones antes/después aprobadas por administración, con la autorización registrada.
+- **Cuenta**: registro opcional, preferencias (subtítulos, reproducción automática, ahorro de datos), dispositivos y sesiones, y cierre de las demás sesiones.
+- **SEO**:
+  - URLs permanentes: `/peliculas/{slug}`, `/series/{slug}`, `/series/{slug}/temporada-1/episodio-1`;
+  - canónicas, Open Graph, JSON-LD (`Movie`, `TVSeries`, `TVEpisode`), `sitemap.xml` y `robots.txt` (excluye admin, cuenta y reproductor).
+
+**Panel `/admin`** (roles `editor` y `admin`)
+- **Panel**: métricas reales del periodo. Una visita a la ficha no cuenta como reproducción. Incluye reproducciones válidas, minutos, porcentaje completado, dispositivos, fuentes y UTM, lo más visto, estado del streaming, incidencias, próximos estrenos y usuarios.
+- **Títulos**: ficha completa con géneros, categorías, IA, libro original y SEO. Estados *Borrador → En revisión → Programado → Publicado → Retirado → Archivado*. La publicación **se bloquea** y lista lo que falta: sinopsis, póster, imagen horizontal, video aprobado y **derechos verificados**.
+- **Temporadas y episodios**: un episodio se puede publicar suelto, sin cargar la temporada entera.
+- **Video**: subida directa y reanudable a Mux o vínculo a un HLS/MP4 ya alojado en un CDN. Recorre *Pendiente → Cargando → Procesando → En revisión → Listo → Publicado / Error* con:
+  - previsualización privada y aprobación;
+  - historial de versiones; sustituir el video no pierde ficha ni métricas;
+  - «Consultar proveedor» para recuperarse si se pierde un webhook.
+- **Imágenes** (con texto alternativo obligatorio) y **subtítulos** (WebVTT o SRT, que se convierte automáticamente).
+- **Tráilers y extras**: teaser, clip, entrevista, making of, conferencia.
+- **Reparto, personajes** (relaciones, apariciones, aviso de spoilers) y **personas**.
+- **Derechos y disponibilidad**: territorios permitidos o bloqueados y ventana de fechas.
+- **Portada**: billboard programable; secciones que se pueden ordenar, ocultar, programar y añadir.
+- **Estrenos**, **antes/después** (sólo administración aprueba), **usuarios** y **auditoría**.
+
+**API versionada `/api/v1`**
+- `playback/{episode|title|trailer}/{id}`: decide el acceso (publicado, ventana, territorio, cuenta, premium) y devuelve la fuente, firmada si procede.
+- `progress`, `events`, `watchlist` y `notify`.
+- `catalog`: JSON público del catálogo.
+- `webhooks/mux` y `webhooks/cineviral`: firma HMAC e idempotencia.
+- `cron/publish`, `health` y `admin/uploads`.
+
+## Arquitectura
+
+| Capa | Elección |
+|---|---|
+| Web | Next.js 16 (App Router, React 19, Server Components y Server Actions), TypeScript, Tailwind CSS 4 |
+| Datos | PostgreSQL (**Supabase**), migraciones SQL versionadas en `supabase/migrations/` |
+| Video | **Mux** (subida directa, transcodificación, HLS adaptativo, CDN, tokens firmados, webhooks) + proveedor «enlace» para HLS/MP4 en un CDN propio |
+| Imágenes y subtítulos | Supabase Storage (producción) o disco local (desarrollo) |
+| Despliegue | Vercel; Vercel Cron para estrenos programados |
+
+**¿Por qué Mux?** Combina en un solo servicio la subida directa y reanudable desde el navegador (el archivo maestro nunca pasa por funciones serverless), la transcodificación a HLS adaptativo con CDN global, los webhooks firmados, la reproducción firmada con JWT (sin DRM obligatorio) y el storyboard para las miniaturas. Además tiene SDK de analítica si más adelante se quiere ampliar. Cobra por minuto codificado, almacenado y entregado, lo que con un catálogo pequeño mantiene el coste fijo bajo. La alternativa natural es **Cloudflare Stream**: suele salir más barato con mucha audiencia (cobra minutos entregados y almacenados, sin coste de codificación) y también tiene subidas directas y URLs firmadas. El código aísla el proveedor (`src/lib/video/`), así que añadir un adaptador de Cloudflare no afecta al resto. Ninguno de los dos impide al 100 % la grabación de pantalla. Si un distribuidor exige DRM, hay que activarlo en el proveedor (Mux ofrece DRM como función aparte).
+
+**Autenticación.** Es propia: contraseñas con scrypt, sesiones con token aleatorio guardado sólo como hash, cookies `HttpOnly`/`SameSite=Lax`/`Secure`, bloqueo tras 5 intentos fallidos, límite de peticiones y cierre remoto de sesiones. Se eligió en lugar de Supabase Auth para que todo funcione con una sola conexión a Postgres y se pueda probar en local sin servicios externos. El modelo `profiles` → `viewer_profiles` ya está preparado para varios perfiles por cuenta y controles parentales (`is_kids`, `maturity_limit`). Migrar a Supabase Auth más adelante sólo exige mapear `profiles.id` a `auth.users.id`.
+
+**Seguridad de datos.**
+- **RLS** activado y forzado en **todas** las tablas. Supabase publica el esquema `public` por su API REST con la clave anónima; sin política, `anon` y `authenticated` no ven nada. Sólo se abre la **lectura del catálogo publicado**.
+- La aplicación accede desde el servidor y autoriza en código: roles, propiedad y origen (CSRF) en cada mutación.
+- CSP estricta, HSTS, `X-Robots-Tag: noindex` en admin, auditoría de cada cambio editorial y revisiones (instantáneas) de títulos, temporadas y episodios.
+- Analítica minimizada: nunca guarda IP. El país y el vínculo con el perfil sólo se registran con consentimiento.
+- No se guardan tarjetas. Las tablas de pagos sólo admiten `confirmed_at` con confirmación del proveedor (Fase 4).
+
+**Modelo de datos.** Las 48 tablas de la sección 28 más `title_categories`, `media_comparisons` y `schema_migrations`. Las de comercio, patrocinios y comunidad existen pero **no tienen flujos activos** todavía (fases 4 y 5).
+
+## Desarrollo local
+
+Requisitos: Node 22+, PostgreSQL 15+ (local o Supabase).
 
 ```bash
 npm install
 ```
+```bash
+cp .env.example .env.local   # ajusta DATABASE_URL; para local: STORAGE_DRIVER=local
+```
+```bash
+npm run db:migrate && npm run db:seed
+```
+```bash
+npm run admin:create -- tu@email.com "Tu nombre"   # imprime una contraseña generada
+```
+```bash
+npm run dev    # http://localhost:3000  ·  panel en /admin
+```
+
+Sin claves de Mux, el panel permite **vincular** videos ya alojados en un CDN (HLS `.m3u8` o MP4 por HTTPS con CORS). Con claves de Mux aparece la subida directa.
+
+## Pruebas
 
 ```bash
-ADMIN_PASSWORD='CambiaEsto2026' npm run seed   # crea el admin y carga datos de demostración
+npm test   # 23 pruebas de integración contra PostgreSQL real (usa TEST_DATABASE_URL o cine_test local)
 ```
+
+Cubren las 20 verificaciones obligatorias de la sección 32 a nivel de servidor:
+- crear y publicar;
+- subida y webhooks firmados de Mux (simulados), aprobación, reproducción, progreso y reanudación, siguiente episodio;
+- subtítulos, tráiler de una obra no publicada, búsqueda sin invenciones, programar y retirar, accesos no autorizados (cuenta, premium, territorio, previsualización, bloqueo por intentos);
+- tokens JWT firmados y recuperación ante fallos del proveedor;
+- sustitución de video sin perder métricas e ingesta desde CineViral.
 
 ```bash
-npm start   # http://localhost:3000 y http://localhost:3000/studio
+npm run test:e2e   # navegador real: necesita PostgreSQL, ffmpeg y `npm i -D playwright && npx playwright install chromium`
 ```
 
-```bash
-npm test    # 14 pruebas de API: seguridad, permisos, reglas de negocio, integraciones
-```
+La prueba e2e hace lo siguiente:
+1. Genera material **de prueba** con ffmpeg: un HLS VP9/Opus con dos calidades, un tráiler, imágenes y subtítulos. Nada de esto entra en el catálogo real.
+2. Levanta un CDN local, crea una base de datos limpia y compila la app aparte, en `.next-e2e`.
+3. Recorre 26 pasos: el administrador completa, sube, vincula, previsualiza, aprueba y publica; un anónimo ve el tráiler y el episodio, cambia calidad, subtítulos y velocidad, busca y comparte; un usuario registrado guarda el progreso, reanuda y usa Mi lista; se bloquea el acceso indebido, se retira un episodio y se comprueba la vista móvil.
 
-Sin `ADMIN_PASSWORD`, el primer arranque genera una contraseña aleatoria y la imprime **una sola vez** en consola.
-Los usuarios de demostración (`prod@`, `vfx@`, `ventas@`, `cliente@demo.cine.libroseller.com`) usan la contraseña `Demo2026cine` (configurable con `DEMO_PASSWORD`). No cargues la demo en producción.
+Las capturas quedan en `tests/e2e/artifacts/`.
 
-## Qué hace (mapa a la misión)
+## Despliegue en producción (Vercel + Supabase + Mux)
 
-| # | Objetivo | Dónde |
-|---|----------|-------|
-| 1 | Captar y atender clientes | Formulario público con honeypot y límite de tasa → **Solicitudes** (embudo, asignación, origen web / CineViral / LibroSeller) |
-| 2 | Idea, novela o guion → proyecto | **Convertir en proyecto**: crea cliente (reutiliza por email), proyecto con código `CLS-AAAA-NNNN` y negocio en propuesta |
-| 3 | Actores reales, intérpretes digitales, personajes | **Talento** (consentimiento de imagen y voz con alcance y vencimiento) y **Personajes** (humano / digital / híbrido / ficticio IA; actor, doble digital y voz) |
-| 4 | Rodaje tradicional y croma / producción virtual | **Rodajes** por jornada (tipo, citación, escenas, captura de tracking) + detección de días con varios proyectos |
-| 5 | Transformar material con IA y VFX | **Planos VFX / IA**: técnica, artista, herramienta, iteraciones (suben solas al pasar a revisión), costo, vencimiento |
-| 6 | Continuidad de personajes, escenarios, voces, vestuario | **Biblia de continuidad** (prompt base, semilla, LoRA, perfil de voz, paleta…) con fichas bloqueables + **informe de continuidad y derechos** por proyecto |
-| 7 | Equipos, contratos, calendario, presupuesto | **Equipo**, **Contratos** (cláusula de réplica digital), **Calendario unificado** (rodajes, eventos, entregas, vencimientos), **Presupuesto** previsto vs. ejecutado |
-| 8 | Versiones y revisiones hasta aprobación | **Sala de revisión**: reproductor, notas con timecode, resolver notas, aprobar / pedir cambios; el cliente participa desde su portal |
-| 9 | Comercializar producciones, servicios y licencias | **Catálogo** (publicado en la web), **Ventas y licencias** por canal y territorio |
-| 10 | Costos, rentabilidad, rendimiento comercial | **Rentabilidad**: margen real y proyectado por proyecto en su moneda, consolidado en USD, flujo de caja mensual, ventas por canal |
-| 11 | Conectar CineViral y LibroSeller | **Integraciones**: webhooks entrantes firmados y publicación saliente de versiones aprobadas (ver abajo) |
+Es un proyecto **independiente** de LibroSeller: no toca su aplicación ni su base de datos.
 
-### Regla ética incorporada
+1. **Supabase**: crea un proyecto nuevo (no reutilices la base de LibroSeller).
+   - Aplica las migraciones: `DATABASE_URL=<cadena directa, puerto 5432> npm run db:migrate && npm run db:seed`. También funciona con `supabase db push`.
+   - Crea el bucket **público** `media`.
+   - Crea el primer administrador: `npm run admin:create -- correo "Nombre"`.
+2. **Mux**:
+   - Crea un *Access Token* (Mux Video lectura/escritura).
+   - Crea un *Webhook* hacia `https://cine.libroseller.com/api/v1/webhooks/mux`.
+   - Si habrá contenido restringido, crea una *Signing Key*.
+3. **Vercel**: importa el repositorio y define las variables de `.env.example`:
+   - `DATABASE_URL` con el **pooler** (puerto 6543);
+   - `STORAGE_DRIVER=supabase`;
+   - `CRON_SECRET` aleatorio.
 
-Un plano que altera o sintetiza a una persona real (reemplazo de rostro, rejuvenecimiento, IA generativa sobre un personaje con intérprete, voz IA) **no puede marcarse como aprobado** si esa persona no tiene consentimiento vigente (`otorgado` o `limitado`, no vencido). El servidor lo rechaza con `409`, el tablero lo muestra como riesgo y el informe de continuidad lo lista como hallazgo de severidad alta.
+   El cron de `vercel.json` (cada 15 minutos) necesita el plan Pro; en Hobby pasa a diario. La visibilidad de los estrenos programados no depende del cron: se calcula al consultar.
+4. **Dominio**: en Vercel, añade `cine.libroseller.com` y crea en la zona DNS de libroseller.com el **CNAME** `cine → cname.vercel-dns.com`. Comprueba que el proyecto es el correcto antes de asignarlo.
+5. **Entornos**: un proyecto de Supabase y unas claves de Mux distintas para *preview* y *production* (las variables por entorno de Vercel lo permiten).
+6. **Copias de seguridad**: activa los backups diarios / PITR de Supabase. Mux conserva los assets; guarda también los archivos maestros originales fuera de Mux.
+7. **Monitoreo**: `/api/v1/health` (base de datos, proveedor, almacenamiento), el panel de incidencias del admin, los logs de Vercel y el dashboard de Mux.
+8. **Reversión**:
+   - Vercel permite *Instant Rollback* al despliegue anterior.
+   - Las migraciones son aditivas: para revertir una, se escribe otra nueva.
+   - Un video sustituido conserva sus versiones anteriores en `video_assets`.
 
-## Roles
+**Al añadir tablas nuevas** en futuras migraciones, activa RLS en ellas (`alter table … enable row level security`).
 
-| Rol | Acceso |
-|-----|--------|
-| `admin` | Todo, incluidos usuarios, integraciones, tasas de cambio y auditoría |
-| `productor` | Proyectos, talento, rodajes, contratos, presupuesto, revisiones; lectura comercial |
-| `vfx` | Planos, personajes, continuidad, versiones; lectura de producción |
-| `ventas` | Solicitudes, clientes, catálogo, negocios, movimientos; lectura de proyectos |
-| `cliente` | Portal: sólo sus proyectos y las versiones marcadas como visibles; comenta y aprueba |
+## Flujo para publicar el primer episodio
 
-Los permisos se declaran por recurso en `server/schema.js` y se aplican en el servidor; el panel sólo oculta lo que el servidor ya prohíbe.
+1. `/admin/titulos` → **Los Convidados al Ágape** → *Ficha*: sinopsis oficial, eslogan, clasificación, libro original y uso de IA.
+2. *Imágenes*: póster vertical y fondo horizontal (y logotipo o banner si existen).
+3. *Derechos*: registra el derecho de streaming y márcalo como **verificado**. Publica la serie (la página mostrará «Primer episodio próximamente» hasta que haya episodios).
+4. *Temporadas y episodios* → E1 → sube el archivo maestro o vincula el HLS → espera a «En revisión» → **Previsualizar** → **Aprobar** → sube los subtítulos → **Publicar ahora** (o **Programar** con fecha).
+5. *Tráilers y extras*: crea el tráiler, sube el video, apruébalo y márcalo como publicado.
+6. *Portada*: el bloque «Gran estreno» ya apunta a la serie; ajusta el billboard si quieres un antetítulo.
 
-## Integraciones LibroSeller / CineViral
+## Pendiente (fases siguientes)
 
-> El prompt maestro llegó cortado en el punto 11 («Conectar CineViral y LibroSeller mediante…»). Implementé un contrato de webhooks firmados, que es lo más neutral; si el texto original pedía otra cosa (SSO compartido, API de catálogo, pagos), se adapta aquí.
-
-**Entrante** — `POST /api/hooks/{libroseller|cineviral}`
-
-- Cabecera `X-Signature: sha256=<HMAC-SHA256 del cuerpo con el secreto>`; `X-Event-Id` para idempotencia.
-- El secreto se genera en *Integraciones* y se muestra una sola vez.
-
-| Proveedor | Evento | Efecto |
-|-----------|--------|--------|
-| libroseller | `book.adaptation_request` | Solicitud de adaptación (novela → largo, corto o serie) |
-| libroseller | `book.trailer_order` | Solicitud de booktrailer |
-| cineviral | `lead.captured` | Solicitud captada en una campaña (suma al contador de la publicación) |
-| cineviral | `metrics.update` | Actualiza vistas, likes, compartidos y clics de una publicación |
-
-```json
-{ "type": "book.trailer_order",
-  "data": { "book": { "title": "Los faros apagados", "author": "M. J. Liriano", "isbn": "978-…", "synopsis": "…" },
-            "contact": { "name": "María José Liriano", "email": "mj@example.com" }, "package": "Booktrailer 60 s" } }
-```
-
-**Saliente** — desde la sala de revisión, una versión **aprobada** se publica con `trailer.publish` (LibroSeller) o `video.publish` (CineViral), firmada igual. Si la integración no está configurada queda **en cola** y se reintenta desde *Integraciones*.
-
-## Arquitectura
-
-```
-server/
-  schema.js        modelo de dominio: campos, validaciones, permisos (fuente única)
-  db.js            SQLite (WAL, claves foráneas), migraciones aditivas, auditoría
-  auth.js          scrypt, sesiones con token hasheado, bloqueo tras 5 intentos, límites de tasa
-  validate.js      validación y normalización por tipo de campo
-  rules.js         reglas de negocio: consentimiento, códigos de proyecto, iteraciones, divisas
-  routes/crud.js   CRUD genérico con filtros, búsqueda, orden, alcance por cliente
-  routes/workflows.js  conversión, revisión, continuidad, finanzas, tablero, calendario
-  routes/integrations.js  webhooks y publicaciones
-  routes/public.js catálogo, vitrina y formulario de contacto
-public/
-  index.html + assets/   sitio público
-  studio/                panel (SPA en módulos ES, sin compilación)
-test/api.test.js
-```
-
-**Seguridad:** contraseñas con scrypt; cookie de sesión `HttpOnly; SameSite=Lax` (`Secure` en producción) con el token guardado sólo como hash; bloqueo temporal por intentos fallidos; verificación de `Origin` y `Content-Type: application/json` en peticiones que modifican datos; CSP estricta sin scripts ni estilos en línea; consultas siempre parametrizadas con nombres de columna tomados del esquema; HMAC con comparación en tiempo constante; registro de auditoría de altas, cambios, borrados, inicios de sesión y decisiones.
-
-## Despliegue
-
-```bash
-docker build -t cine-libroseller .
-```
-
-```bash
-docker run -d -p 3000:3000 -v cine-data:/data -e TRUST_PROXY=1 -e ADMIN_PASSWORD='…' cine-libroseller
-```
-
-Pon delante un proxy con TLS (Caddy, Nginx o Cloudflare) para `cine.libroseller.com` y respalda el volumen `/data` (un solo archivo SQLite; `sqlite3 cine.db ".backup copia.db"` en caliente). Variables en `.env.example`.
-
-## Límites conocidos y siguientes pasos
-
-- **Archivos de vídeo:** las versiones se enlazan por URL (Frame.io, Drive, S3…); no hay subida ni transcodificación propia.
-- **Una instancia:** SQLite y el limitador de tasa en memoria sirven para un servidor. Para escalar horizontalmente: PostgreSQL y Redis.
-- **Correo:** no se envían notificaciones (nueva solicitud, versión lista para revisión); falta un proveedor SMTP.
-- **Pagos en línea y facturación fiscal (NCF en RD):** fuera del alcance de esta versión.
-- **Generación IA:** el sistema gestiona y controla el trabajo con herramientas externas (ComfyUI, Runway, Nuke…); no las ejecuta.
+- **Fase 2**: varios perfiles por cuenta en la interfaz, correo de avisos de estreno (los avisos ya se registran con consentimiento; falta conectar un proveedor de email) y verificación de email.
+- **Fase 3**: búsqueda semántica y asistente de personajes. El catálogo y las fichas ya distinguen el canon; el asistente debe basarse sólo en material oficial.
+- **Fase 4**: pagos (pasarela, webhooks y entitlements: las tablas ya existen), membresías, alquiler, patrocinios e integración comercial con la API de LibroSeller (hoy el libro se enlaza manualmente desde la ficha).
+- **Fase 5**: apps nativas y de TV, descargas offline y DRM.
