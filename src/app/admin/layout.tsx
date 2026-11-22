@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const v = await requireEditor();
   const nav: [string, string][] = [
-    ['/admin', 'Panel'], ['/admin/titulos', 'Títulos'], ['/admin/videos', 'Videos'], ['/admin/portada', 'Portada'],
+    ['/admin', 'Panel'], ['/admin/subir', '⬆ Subir episodio'], ['/admin/titulos', 'Títulos'], ['/admin/videos', 'Videos'], ['/admin/portada', 'Portada'],
     ['/admin/estrenos', 'Estrenos'], ['/admin/personas', 'Personas'], ['/admin/detras-de-camaras', 'Antes / después'],
     ...(isAdmin(v) ? ([['/admin/usuarios', 'Usuarios'], ['/admin/auditoria', 'Auditoría']] as [string, string][]) : []),
   ];

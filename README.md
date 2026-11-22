@@ -157,7 +157,7 @@ npm run test:e2e   # navegador real: necesita PostgreSQL, ffmpeg y `npm i -D pla
 La prueba e2e hace lo siguiente:
 1. Genera material **de prueba** con ffmpeg: un HLS VP9/Opus con dos calidades, un tráiler, imágenes y subtítulos. Nada de esto entra en el catálogo real.
 2. Levanta un CDN local, crea una base de datos limpia y compila la app aparte, en `.next-e2e`.
-3. Recorre 26 pasos: el administrador completa, sube, vincula, previsualiza, aprueba y publica; un anónimo ve el tráiler y el episodio, cambia calidad, subtítulos y velocidad, busca y comparte; un usuario registrado guarda el progreso, reanuda y usa Mi lista; se bloquea el acceso indebido, se retira un episodio y se comprueba la vista móvil.
+3. Recorre 27 pasos, incluida una subida a un Mux simulado con el asistente: el administrador completa, sube, vincula, previsualiza, aprueba y publica; un anónimo ve el tráiler y el episodio, cambia calidad, subtítulos y velocidad, busca y comparte; un usuario registrado guarda el progreso, reanuda y usa Mi lista; se bloquea el acceso indebido, se retira un episodio y se comprueba la vista móvil.
 
 Las capturas quedan en `tests/e2e/artifacts/`.
 
@@ -191,6 +191,17 @@ Es un proyecto **independiente** de LibroSeller: no toca su aplicación ni su ba
 **Al añadir tablas nuevas** en futuras migraciones, activa RLS en ellas (`alter table … enable row level security`).
 
 ## Flujo para publicar el primer episodio
+
+**La forma más sencilla es el asistente `/admin/subir`** («⬆ Subir episodio» en el menú del panel). Reúne en una sola pantalla y en orden todo lo necesario, marcando con ✓ lo que ya está hecho:
+1. Textos de la serie.
+2. Póster e imagen horizontal.
+3. Derechos de streaming.
+4. Publicar la serie.
+5. Video: arrastrar y soltar, progreso, velocidad y tiempo restante, procesamiento en Mux (en local se consulta solo, sin webhook), previsualizar y aprobar.
+6. Publicar o programar el episodio.
+7. Subtítulos y miniatura (opcional).
+
+### Paso a paso desde la ficha del título
 
 1. `/admin/titulos` → **Los Convidados al Ágape** → *Ficha*: sinopsis oficial, eslogan, clasificación, libro original y uso de IA.
 2. *Imágenes*: póster vertical y fondo horizontal (y logotipo o banner si existen).

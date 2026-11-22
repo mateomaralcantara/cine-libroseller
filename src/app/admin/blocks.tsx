@@ -107,6 +107,25 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
           </div>
         </div>
       )}
+      {current ? (
+        <details className="rounded-xl border border-line p-4">
+          <summary className="cursor-pointer text-sm text-gold-soft">Sustituir el video (sube una versión nueva; la actual sigue en el aire hasta que apruebes la nueva)</summary>
+          <div className="mt-4">
+      <div className="grid gap-6 lg:grid-cols-2">
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-gold-soft">Subir archivo maestro</h3>
+              <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} />
+            </div>
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-gold-soft">…o vincular video ya optimizado (HLS/MP4 en CDN)</h3>
+              <ActionForm action={link} submit="Verificar y vincular" resetOnOk>
+                <Field label="URL del .m3u8 o .mp4" name="url" type="url" required placeholder="https://cdn.ejemplo.com/obra/master.m3u8" help="Se comprueba que responde y que es un formato reproducible. Debe permitir CORS desde este dominio." />
+              </ActionForm>
+            </div>
+          </div>
+          </div>
+        </details>
+      ) : (
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
           <h3 className="mb-2 text-sm font-semibold text-gold-soft">Subir archivo maestro</h3>
@@ -119,6 +138,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
           </ActionForm>
         </div>
       </div>
+      )}
       {assets.length > 0 && (
         <div className="mt-6 overflow-x-auto">
           <table className="w-full text-left text-sm">

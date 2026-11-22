@@ -16,6 +16,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       {sp.acceso === 'solo-administradores' && <p role="alert" className="rounded-lg border border-warn/40 bg-warn/10 px-3 py-2 text-sm text-warn">Esa sección es sólo para administración.</p>}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div><h1 className="display text-3xl">Panel</h1><p className="text-sm text-dim">Datos reales de los últimos {days} días. Una visita a una ficha no cuenta como reproducción.</p></div>
+        <Link href="/admin/subir" className="btn btn-gold btn-sm">⬆ Subir episodio</Link>
         <nav className="flex gap-2" aria-label="Periodo">{[7, 30, 90].map((d) => <Link key={d} href={`/admin?dias=${d}`} className={`chip ${d === days ? 'chip-gold' : ''}`}>{d} días</Link>)}</nav>
       </div>
 

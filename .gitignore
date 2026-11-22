@@ -11,3 +11,4 @@ next-env.d.ts
 tests/e2e/artifacts/
 .next-e2e/
 storage-test/
+.next-*/

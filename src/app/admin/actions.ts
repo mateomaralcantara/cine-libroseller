@@ -434,3 +434,18 @@ export async function setUserRoleAction(profileId: string, _p: ActionState, f: F
     return 'Usuario actualizado.';
   });
 }
+
+// ------------------------------------------------------------------ Asistente «Subir episodio»
+/** Guarda sólo los textos de presentación de un título, sin tocar el resto de la ficha. */
+export async function saveSynopsisAction(titleId: string, _p: ActionState, f: FormData): Promise<ActionState> {
+  const v = await requireEditor();
+  return run(async () => {
+    const short = str(f, 'synopsis_short').trim();
+    if (!short) throw new ValidationError('La sinopsis corta es obligatoria para publicar.', { synopsis_short: 'Obligatoria' });
+    if (short.length > 400) throw new ValidationError('La sinopsis corta admite hasta 400 caracteres.', { synopsis_short: 'Demasiado larga' });
+    await sql`update titles set synopsis_short = ${short}, synopsis_long = ${str(f, 'synopsis_long').trim().slice(0, 6000) || null},
+      tagline = ${str(f, 'tagline').trim().slice(0, 200) || null}, age_rating = ${str(f, 'age_rating').trim().slice(0, 20) || null} where id = ${titleId}`;
+    await audit(v.id, 'title.synopsis', 'title', titleId);
+    return 'Textos guardados.';
+  }, ['/']);
+}

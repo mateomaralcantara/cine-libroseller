@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startFakeMux } from './fake-mux.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright');
@@ -18,6 +19,7 @@ const CDN = path.join(OUT, 'cdn');
 const DB = process.env.E2E_DATABASE_URL || 'postgres://postgres@127.0.0.1:5432/cine_e2e';
 const APP_PORT = Number(process.env.E2E_PORT || 3100);
 const CDN_PORT = APP_PORT + 1;
+const MUX_PORT = APP_PORT + 2;
 const BASE = `http://127.0.0.1:${APP_PORT}`;
 const ADMIN = { email: 'admin-e2e@cine.libroseller.com', password: 'AdminE2e2026' };
 
@@ -84,12 +86,12 @@ async function resetDb() {
 
 function buildApp() {
   // Compilación aparte (.next-e2e) que admite el CDN de pruebas en la CSP; no toca la compilación normal.
-  execFileSync('npx', ['next', 'build'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, NEXT_DIST_DIR: '.next-e2e', CSP_EXTRA_SOURCES: `http://127.0.0.1:${CDN_PORT}`, DATABASE_URL: DB, NEXT_PUBLIC_SITE_URL: BASE } });
+  execFileSync('npx', ['next', 'build'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, NEXT_DIST_DIR: '.next-e2e', CSP_EXTRA_SOURCES: `http://127.0.0.1:${CDN_PORT} http://127.0.0.1:${MUX_PORT}`, DATABASE_URL: DB, NEXT_PUBLIC_SITE_URL: BASE } });
 }
 
 async function startApp() {
   const env = { ...process.env, NEXT_DIST_DIR: '.next-e2e', DATABASE_URL: DB, PORT: String(APP_PORT), NEXT_PUBLIC_SITE_URL: BASE, LOCAL_STORAGE_DIR: path.join(OUT, 'storage'), STORAGE_DRIVER: 'local',
-    MUX_TOKEN_ID: '', MUX_TOKEN_SECRET: '', NODE_ENV: 'production', ALLOW_INSECURE_VIDEO_LINKS: '1' };
+    MUX_TOKEN_ID: 'sim', MUX_TOKEN_SECRET: 'sim', MUX_API_BASE: `http://127.0.0.1:${MUX_PORT}`, MUX_WEBHOOK_SECRET: '', NODE_ENV: 'production', ALLOW_INSECURE_VIDEO_LINKS: '1' };
     try { await fetch(`${BASE}/api/v1/health`); throw new Error(`El puerto ${APP_PORT} ya está ocupado: detén ese servidor o usa E2E_PORT.`); } catch (e) { if (e.message.includes('ocupado')) throw e; }
   const app = spawn('npx', ['next', 'start', '-p', String(APP_PORT), '-H', '127.0.0.1'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let log = '';
@@ -112,6 +114,7 @@ async function main() {
   console.log('Preparando material de prueba, base de datos y servidores…');
   fixtures();
   const cdn = cdnServer();
+  const fakeMux = startFakeMux(MUX_PORT);
   await resetDb();
   if (!process.env.E2E_SKIP_BUILD) { console.log('Compilando la app para pruebas…'); buildApp(); }
   const { app, log } = await startApp();
@@ -225,6 +228,29 @@ async function main() {
       await panel.locator('input[name=is_public]').check();
       await panel.locator('button:has-text("Guardar")').click();
       await expectOk(a, 'Estreno guardado.');
+    });
+    await step('sube un episodio con el asistente (Mux simulado, sin webhook)', async () => {
+      await a.goto(`${BASE}/admin/titulos/${seriesId}?tab=temporadas`);
+      const epForm = a.locator('form', { has: a.locator('button:has-text("Añadir episodio")') }).first();
+      await epForm.locator('input[name=name]').fill('Episodio subido con el asistente');
+      await epForm.locator('button:has-text("Añadir episodio")').click();
+      await a.waitForURL(/\/admin\/episodios\//);
+      const epId = a.url().split('/').pop();
+      await a.goto(`${BASE}/admin/subir?episodio=${epId}`);
+      const paso = (n) => a.locator('section', { has: a.locator(`#paso-${n}`) });
+      await paso(5).locator('input[type=file]').setInputFiles(path.join(CDN, 'trailer.webm'));
+      await paso(5).locator('button:has-text("Subir episodio")').click();
+      await a.getByText('Versión v1 procesada').waitFor({ timeout: 60000 });
+      await paso(5).locator('button:has-text("Aprobar video")').click();
+      await a.getByText('Versión vigente: v1').waitFor();
+      await paso(6).locator('select[name=to]').selectOption('published');
+      await paso(6).locator('button:has-text("Aplicar")').click();
+      await a.getByText('¡Publicado!').waitFor();
+      await shot(a, '12-asistente-subida');
+      // Se retira para no interferir con las pruebas de reproducción (su video apunta al Mux simulado)
+      await a.goto(`${BASE}/admin/episodios/${epId}`);
+      await a.selectOption('#to', 'withdrawn'); await a.click('button:has-text("Aplicar")');
+      await expectOk(a, 'Estado actualizado.');
     });
     await shot(a, '10-admin-episodio');
     await a.goto(`${BASE}/admin`); await shot(a, '11-admin-panel');
@@ -373,6 +399,7 @@ async function main() {
     await browser.close();
     try { process.kill(-app.pid, 'SIGTERM'); } catch { app.kill('SIGTERM'); }
     cdn.close();
+    fakeMux.close();
     fs.writeFileSync(path.join(OUT, 'results.json'), JSON.stringify({ results, consoleErrors, serverLog: log().slice(-5000) }, null, 2));
   }
   const failed = results.filter((r) => !r.ok).length;

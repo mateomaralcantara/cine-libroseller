@@ -70,19 +70,44 @@ export function AutoRefresh({ active, every = 5000, assetIds = [] }: { active: b
   return null;
 }
 
-/** Subida directa y reanudable al proveedor (Mux) con UpChunk. */
+/** Subida directa y reanudable al proveedor (Mux) con UpChunk: arrastrar y soltar, progreso, velocidad y tiempo restante. */
+const VIDEO_EXT = /\.(mp4|mov|m4v|mkv|webm|avi|mpg|mpeg|mxf)$/i;
+const fmtBytes = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(0)} MB`);
+const fmtEta = (s: number) => (!Number.isFinite(s) || s <= 0 ? '' : s < 60 ? `${Math.ceil(s)} s` : s < 3600 ? `${Math.ceil(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.ceil((s % 3600) / 60)} min`);
+
 export function DirectUploader({ ownerType, ownerId, muxReady }: { ownerType: 'episode' | 'title' | 'trailer'; ownerId: string; muxReady: boolean }) {
   const [file, setFile] = useState<File | null>(null);
   const [signed, setSigned] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  const [rate, setRate] = useState<{ bps: number; eta: number } | null>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const upload = useRef<{ abort: () => void; pause: () => void; resume: () => void } | null>(null);
+  const assetRef = useRef<string | null>(null);
+  const sample = useRef<{ t: number; p: number } | null>(null);
   const [paused, setPaused] = useState(false);
   const router = useRouter();
 
+  // Avisa antes de cerrar o recargar la pestaña mientras se sube
+  useEffect(() => {
+    if (progress === null) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [progress]);
+
   if (!muxReady) {
-    return <p className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-warn">La subida directa necesita Mux configurado (MUX_TOKEN_ID, MUX_TOKEN_SECRET y MUX_WEBHOOK_SECRET). Mientras tanto puedes vincular un video ya alojado en un CDN.</p>;
+    return <p className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-warn">La subida directa necesita Mux: añade MUX_TOKEN_ID y MUX_TOKEN_SECRET en .env.local y reinicia «npm run dev». Mientras tanto puedes vincular un video ya alojado en un CDN.</p>;
   }
+
+  const pick = (f: File | null | undefined) => {
+    setMessage(null);
+    if (!f) return;
+    if (!VIDEO_EXT.test(f.name) && !f.type.startsWith('video/')) { setMessage({ kind: 'error', text: `«${f.name}» no parece un video. Usa MP4, MOV, MKV, WebM o MXF.` }); return; }
+    setFile(f);
+  };
+  const report = (id: string, state: 'sent' | 'failed', msg?: string) =>
+    fetch(`/api/v1/admin/uploads/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state, message: msg }) });
 
   async function start() {
     if (!file) return;
@@ -91,42 +116,83 @@ export function DirectUploader({ ownerType, ownerId, muxReady }: { ownerType: 'e
       body: JSON.stringify({ ownerType, ownerId, signed, file: { name: file.name, size: file.size, type: file.type } }) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) { setMessage({ kind: 'error', text: data.error || 'No se pudo iniciar la subida.' }); return; }
+    assetRef.current = data.assetId;
     const { createUpload } = await import('@mux/upchunk');
-    setProgress(0);
+    setProgress(0); setRate(null); sample.current = { t: Date.now(), p: 0 };
     const up = createUpload({ endpoint: data.uploadUrl, file, chunkSize: 30720, dynamicChunkSize: true });
     upload.current = up;
-    const report = (state: 'sent' | 'failed', msg?: string) => fetch(`/api/v1/admin/uploads/${data.assetId}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state, message: msg }) });
-    up.on('progress', (e: CustomEvent<number>) => setProgress(e.detail));
+    up.on('progress', (e: CustomEvent<number>) => {
+      setProgress(e.detail);
+      const now = Date.now(); const prev = sample.current;
+      if (prev && now - prev.t > 3000) {
+        const bytes = ((e.detail - prev.p) / 100) * file.size;
+        const bps = bytes / ((now - prev.t) / 1000);
+        setRate({ bps, eta: bps > 0 ? (((100 - e.detail) / 100) * file.size) / bps : Infinity });
+        sample.current = { t: now, p: e.detail };
+      }
+    });
     up.on('success', async () => {
-      await report('sent');
-      setProgress(null); setFile(null);
-      setMessage({ kind: 'ok', text: 'Archivo enviado. El proveedor lo está procesando; el estado se actualizará solo.' });
+      await report(data.assetId, 'sent');
+      setProgress(null); setFile(null); setRate(null);
+      setMessage({ kind: 'ok', text: '✓ Archivo enviado. Mux lo está procesando: esta página se actualizará sola cuando esté listo para revisar.' });
       router.refresh();
     });
     up.on('error', async (e: CustomEvent<{ message: string }>) => {
-      await report('failed', e.detail?.message);
-      setProgress(null);
+      await report(data.assetId, 'failed', e.detail?.message);
+      setProgress(null); setRate(null);
       setMessage({ kind: 'error', text: `La subida falló: ${e.detail?.message ?? 'error de red'}. Puedes intentarlo de nuevo.` });
       router.refresh();
     });
-    up.on('offline', () => setMessage({ kind: 'info', text: 'Sin conexión: la subida se reanudará al recuperar la red.' }));
+    up.on('offline', () => setMessage({ kind: 'info', text: 'Sin conexión: la subida se reanudará sola al recuperar la red.' }));
     up.on('online', () => setMessage(null));
+  }
+
+  async function cancel() {
+    if (!confirm('¿Cancelar la subida? Tendrás que empezar de nuevo.')) return;
+    upload.current?.abort();
+    if (assetRef.current) await report(assetRef.current, 'failed', 'cancelada por el usuario');
+    setProgress(null); setRate(null); setPaused(false);
+    setMessage({ kind: 'info', text: 'Subida cancelada.' });
+    router.refresh();
+  }
+
+  if (progress !== null) {
+    return (
+      <div className="grid gap-3 rounded-2xl border border-gold/40 bg-gold/5 p-5">
+        <p className="font-medium">Subiendo «{file?.name}» <span className="text-dim">({file ? fmtBytes(file.size) : ''})</span></p>
+        <div className="h-3 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label="Progreso de subida">
+          <div className="h-full bg-gold transition-all" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-lg font-semibold tabular-nums">{progress.toFixed(1)} %</span>
+          {rate && !paused && <span className="text-mist">{fmtBytes(rate.bps)}/s · quedan {fmtEta(rate.eta) || 'unos instantes'}</span>}
+          {paused && <span className="text-warn">En pausa</span>}
+          <span className="spacer flex-1" />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { if (paused) upload.current?.resume(); else upload.current?.pause(); setPaused(!paused); }}>{paused ? 'Reanudar' : 'Pausar'}</button>
+          <button type="button" className="btn btn-ghost btn-sm text-bad" onClick={cancel}>Cancelar</button>
+        </div>
+        <p className="text-xs text-dim">No cierres esta pestaña hasta que termine. Si se corta internet, la subida continúa sola al volver la conexión.</p>
+        {message && <p role="status" className="text-sm text-mist">{message.text}</p>}
+      </div>
+    );
   }
 
   return (
     <div className="grid gap-3">
-      <input type="file" accept="video/*,.mov,.mkv,.mxf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="field file:mr-3 file:rounded-full file:border-0 file:bg-gold file:px-3 file:py-1 file:text-ink" disabled={progress !== null} aria-label="Archivo de video" />
-      {file && <p className="text-xs text-dim">{file.name} · {(file.size / 1024 ** 3).toFixed(2)} GB</p>}
-      <label className="flex items-center gap-2 text-sm text-mist"><input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} className="accent-[var(--color-gold)]" disabled={progress !== null} /> Reproducción firmada (contenido restringido: requiere claves de firma de Mux)</label>
-      {progress !== null ? (
-        <div className="grid gap-2">
-          <div className="h-2 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label="Progreso de subida"><div className="h-full bg-gold transition-all" style={{ width: `${progress}%` }} /></div>
-          <div className="flex items-center gap-3 text-sm"><span className="tabular-nums">{progress.toFixed(1)} %</span>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { if (paused) upload.current?.resume(); else upload.current?.pause(); setPaused(!paused); }}>{paused ? 'Reanudar' : 'Pausar'}</button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => { upload.current?.abort(); setProgress(null); setMessage({ kind: 'info', text: 'Subida cancelada.' }); }}>Cancelar</button>
-          </div>
-        </div>
-      ) : <button type="button" className="btn btn-gold btn-sm justify-self-start" disabled={!file} onClick={start}>Subir al proveedor de streaming</button>}
+      <label
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); pick(e.dataTransfer.files?.[0]); }}
+        className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition ${dragging ? 'border-gold bg-gold/10' : 'border-line hover:border-gold/60'}`}
+      >
+        <input type="file" accept="video/*,.mov,.mkv,.mxf" className="sr-only" onChange={(e) => pick(e.target.files?.[0])} aria-label="Archivo de video" />
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="text-gold" aria-hidden><path d="M12 16V4m0 0-4 4m4-4 4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>
+        {file
+          ? <><span className="font-semibold">{file.name}</span><span className="text-sm text-dim">{fmtBytes(file.size)} · listo para subir</span></>
+          : <><span className="font-semibold">Arrastra aquí el archivo del episodio</span><span className="text-sm text-dim">o haz clic para elegirlo · MP4, MOV, MKV, WebM o MXF</span></>}
+      </label>
+      <label className="flex items-center gap-2 text-sm text-mist"><input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} className="accent-[var(--color-gold)]" /> Reproducción firmada (sólo para contenido restringido; requiere las claves de firma de Mux)</label>
+      <button type="button" className="btn btn-gold justify-self-start" disabled={!file} onClick={start}>Subir episodio</button>
       {message && <p role={message.kind === 'error' ? 'alert' : 'status'} className={`text-sm ${message.kind === 'error' ? 'text-bad' : message.kind === 'ok' ? 'text-ok' : 'text-mist'}`}>{message.text}</p>}
     </div>
   );
