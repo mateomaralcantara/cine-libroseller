@@ -75,7 +75,10 @@ const VIDEO_EXT = /\.(mp4|mov|m4v|mkv|webm|avi|mpg|mpeg|mxf)$/i;
 const fmtBytes = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(0)} MB`);
 const fmtEta = (s: number) => (!Number.isFinite(s) || s <= 0 ? '' : s < 60 ? `${Math.ceil(s)} s` : s < 3600 ? `${Math.ceil(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.ceil((s % 3600) / 60)} min`);
 
-export function DirectUploader({ ownerType, ownerId, muxReady }: { ownerType: 'episode' | 'title' | 'trailer'; ownerId: string; muxReady: boolean }) {
+export function DirectUploader({ ownerType, ownerId, muxReady, localReady = false, localReason }: { ownerType: 'episode' | 'title' | 'trailer'; ownerId: string; muxReady: boolean; localReady?: boolean; localReason?: string }) {
+  const mode: 'mux' | 'local' | 'none' = muxReady ? 'mux' : localReady ? 'local' : 'none';
+  const pausedRef = useRef(false);
+  const cancelledRef = useRef(false);
   const [file, setFile] = useState<File | null>(null);
   const [signed, setSigned] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
@@ -96,22 +99,85 @@ export function DirectUploader({ ownerType, ownerId, muxReady }: { ownerType: 'e
     return () => window.removeEventListener('beforeunload', warn);
   }, [progress]);
 
-  if (!muxReady) {
-    return <p className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-warn">La subida directa necesita Mux: añade MUX_TOKEN_ID y MUX_TOKEN_SECRET en .env.local y reinicia «npm run dev». Mientras tanto puedes vincular un video ya alojado en un CDN.</p>;
+  if (mode === 'none') {
+    return <p className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-sm text-warn">Para subir archivos configura Mux (MUX_TOKEN_ID y MUX_TOKEN_SECRET) o, para pruebas en tu PC, usa STORAGE_DRIVER=local. {localReason} Mientras tanto puedes vincular un video ya alojado en un CDN.</p>;
   }
 
   const pick = (f: File | null | undefined) => {
     setMessage(null);
     if (!f) return;
     if (!VIDEO_EXT.test(f.name) && !f.type.startsWith('video/')) { setMessage({ kind: 'error', text: `«${f.name}» no parece un video. Usa MP4, MOV, MKV, WebM o MXF.` }); return; }
+    if (mode === 'local' && !/\.(mp4|m4v|webm)$/i.test(f.name)) { setMessage({ kind: 'error', text: 'En el modo local (sin Mux) el navegador reproduce el archivo tal cual: exporta un MP4 (H.264 + AAC). MOV/ProRes o MKV no se verían.' }); return; }
     setFile(f);
   };
   const report = (id: string, state: 'sent' | 'failed', msg?: string) =>
     fetch(`/api/v1/admin/uploads/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ state, message: msg }) });
 
+  function trackProgress(pct: number, total: number) {
+    setProgress(pct);
+    const now = Date.now(); const prev = sample.current;
+    if (prev && now - prev.t > 3000) {
+      const bps = (((pct - prev.p) / 100) * total) / ((now - prev.t) / 1000);
+      setRate({ bps, eta: bps > 0 ? (((100 - pct) / 100) * total) / bps : Infinity });
+      sample.current = { t: now, p: pct };
+    }
+  }
+
+  // Subida al propio servidor por partes de 8 MB; si se corta, pregunta cuánto llegó y continúa
+  async function startLocal(f: File) {
+    const res = await fetch('/api/v1/admin/local-uploads', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ownerType, ownerId, file: { name: f.name, size: f.size, type: f.type } }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { setMessage({ kind: 'error', text: data.error || 'No se pudo iniciar la subida.' }); return; }
+    assetRef.current = data.assetId;
+    cancelledRef.current = false; pausedRef.current = false;
+    upload.current = {
+      abort: () => { cancelledRef.current = true; },
+      pause: () => { pausedRef.current = true; },
+      resume: () => { pausedRef.current = false; },
+    };
+    setProgress(0); setRate(null); sample.current = { t: Date.now(), p: 0 };
+    const url = `/api/v1/admin/local-uploads/${data.assetId}`;
+    let offset = 0; let failures = 0;
+    while (offset < f.size) {
+      if (cancelledRef.current) return;
+      if (pausedRef.current) { await new Promise((r) => setTimeout(r, 400)); continue; }
+      const chunk = f.slice(offset, offset + data.chunkSize);
+      try {
+        const r = await fetch(`${url}?offset=${offset}`, { method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body: chunk });
+        const out = await r.json().catch(() => ({}));
+        if (r.status === 409 && typeof out.received === 'number') { offset = out.received; continue; }
+        if (!r.ok) throw new Error(out.error || `el servidor respondió ${r.status}`);
+        offset = out.received; failures = 0;
+        trackProgress((offset / f.size) * 100, f.size);
+      } catch (e) {
+        failures++;
+        if (failures > 8) {
+          await report(data.assetId, 'failed', (e as Error).message);
+          setProgress(null); setRate(null);
+          setMessage({ kind: 'error', text: `La subida falló: ${(e as Error).message}. Puedes intentarlo de nuevo.` });
+          router.refresh();
+          return;
+        }
+        setMessage({ kind: 'info', text: 'Conexión interrumpida: reintentando…' });
+        await new Promise((r) => setTimeout(r, Math.min(15000, 1000 * 2 ** failures)));
+        const st = await fetch(url, { cache: 'no-store' }).then((x) => x.json()).catch(() => null);
+        if (st && typeof st.received === 'number') offset = st.received;
+      }
+    }
+    setMessage({ kind: 'info', text: 'Comprobando el archivo…' });
+    const done = await fetch(url, { method: 'POST' });
+    const out = await done.json().catch(() => ({}));
+    setProgress(null); setFile(null); setRate(null);
+    if (!done.ok) { setMessage({ kind: 'error', text: out.error || 'No se pudo completar la subida.' }); router.refresh(); return; }
+    setMessage({ kind: 'ok', text: '✓ Archivo recibido y verificado. Ya está «En revisión»: previsualízalo y apruébalo.' });
+    router.refresh();
+  }
+
   async function start() {
     if (!file) return;
     setMessage(null);
+    if (mode === 'local') return startLocal(file);
     const res = await fetch('/api/v1/admin/uploads', { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ownerType, ownerId, signed, file: { name: file.name, size: file.size, type: file.type } }) });
     const data = await res.json().catch(() => ({}));
@@ -189,9 +255,11 @@ export function DirectUploader({ ownerType, ownerId, muxReady }: { ownerType: 'e
         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" className="text-gold" aria-hidden><path d="M12 16V4m0 0-4 4m4-4 4 4" /><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" /></svg>
         {file
           ? <><span className="font-semibold">{file.name}</span><span className="text-sm text-dim">{fmtBytes(file.size)} · listo para subir</span></>
-          : <><span className="font-semibold">Arrastra aquí el archivo del episodio</span><span className="text-sm text-dim">o haz clic para elegirlo · MP4, MOV, MKV, WebM o MXF</span></>}
+          : <><span className="font-semibold">Arrastra aquí el archivo del episodio</span><span className="text-sm text-dim">o haz clic para elegirlo · {mode === 'local' ? 'MP4 (H.264 + AAC) o WebM' : 'MP4, MOV, MKV, WebM o MXF'}</span></>}
       </label>
-      <label className="flex items-center gap-2 text-sm text-mist"><input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} className="accent-[var(--color-gold)]" /> Reproducción firmada (sólo para contenido restringido; requiere las claves de firma de Mux)</label>
+      {mode === 'mux'
+        ? <label className="flex items-center gap-2 text-sm text-mist"><input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} className="accent-[var(--color-gold)]" /> Reproducción firmada (sólo para contenido restringido; requiere las claves de firma de Mux)</label>
+        : <p className="rounded-lg border border-line bg-white/[0.03] p-3 text-xs text-mist"><strong className="text-cream">Modo local de prueba (sin Mux):</strong> el archivo se guarda en la carpeta «storage» de este equipo y se reproduce tal cual, sin calidades adaptativas. Usa un MP4 en H.264 + AAC. Para publicar en internet hará falta Mux o un CDN.</p>}
       <button type="button" className="btn btn-gold justify-self-start" disabled={!file} onClick={start}>Subir episodio</button>
       {message && <p role={message.kind === 'error' ? 'alert' : 'status'} className={`text-sm ${message.kind === 'error' ? 'text-bad' : message.kind === 'ok' ? 'text-ok' : 'text-mist'}`}>{message.text}</p>}
     </div>

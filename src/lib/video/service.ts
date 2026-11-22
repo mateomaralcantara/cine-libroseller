@@ -4,6 +4,9 @@
 // - Mux: el navegador sube el archivo directamente a Mux; Mux avisa por webhook firmado.
 // - Enlace: el video ya está en un CDN; se valida la URL y pasa a revisión.
 // Un video sólo se considera reproducible cuando el proveedor lo confirma (ready/published).
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
+import path from 'node:path';
 import { sql, type Tx } from '../db';
 import { env } from '../env';
 import { audit } from '../audit';
@@ -226,6 +229,10 @@ export async function handleMuxWebhook(rawBody: string, signatureHeader: string 
 export async function refreshFromProvider(actorId: string, assetId: string, { quiet = false } = {}) {
   const [row] = await sql`select * from video_assets where id = ${assetId}`;
   if (!row) throw new VideoError('Video no encontrado.');
+  if (row.provider === 'local') {
+    if (row.status !== 'uploading' && !localVideoExists(row.source_url)) await failAsset(assetId, 'El archivo local ya no existe en la carpeta storage.');
+    return (await sql`select * from video_assets where id = ${assetId}`)[0];
+  }
   if (row.provider !== 'mux') {
     if (row.provider === 'link') {
       const check = await validateVideoLink(row.source_url);
@@ -290,4 +297,113 @@ export async function currentAsset(ownerType: OwnerType, ownerId: string, db: Tx
 export async function markOwnerVideoPublished(ownerType: OwnerType, ownerId: string, published: boolean, db: Tx = sql) {
   await db`update video_assets set status = ${published ? 'published' : 'ready'}
     where owner_type = ${ownerType} and owner_id = ${ownerId} and is_current and status in ('ready', 'published')`;
+}
+
+// ------------------------------------------------------------------ Proveedor «local» (pruebas en tu PC)
+// El archivo se sube por partes al propio servidor y se guarda en <LOCAL_STORAGE_DIR>/public/videos.
+// Sólo con STORAGE_DRIVER=local y fuera de Vercel (que no tiene disco persistente).
+
+export const LOCAL_CHUNK_BYTES = 8 * 1024 * 1024;
+const LOCAL_MAX_BYTES = (Number(process.env.LOCAL_VIDEO_MAX_GB) || 20) * 1024 ** 3;
+const localRoot = () => path.resolve(env.storage.localDir);
+const partFile = (id: string) => path.join(localRoot(), 'uploads', `${id}.part`);
+
+export function localUploadsAvailable(): { ok: true } | { ok: false; reason: string } {
+  if (env.storage.driver !== 'local') return { ok: false, reason: 'La subida local necesita STORAGE_DRIVER=local en .env.local.' };
+  if (process.env.VERCEL) return { ok: false, reason: 'En Vercel no hay disco persistente: usa Mux o vincula un video alojado en un CDN.' };
+  return { ok: true };
+}
+
+export async function createLocalUpload(actorId: string, input: { ownerType: OwnerType; ownerId: string; file: { name: string; size: number; type: string } }) {
+  const avail = localUploadsAvailable();
+  if (!avail.ok) throw new VideoError(avail.reason);
+  validateUploadRequest(input.file);
+  if (!/\.(mp4|m4v|webm)$/i.test(input.file.name)) {
+    throw new VideoError('Sin Mux, el navegador reproduce el archivo tal cual: sube un MP4 (H.264 + AAC) o WebM. Un MOV/ProRes o MKV no se vería.');
+  }
+  if (input.file.size > LOCAL_MAX_BYTES) throw new VideoError(`El archivo supera el máximo para la subida local (${LOCAL_MAX_BYTES / 1024 ** 3} GB).`);
+  await ownerExists(input.ownerType, input.ownerId);
+  const asset = await sql.begin(async (tx) => {
+    const version = await nextVersion(input.ownerType, input.ownerId, tx);
+    const [a] = await tx`insert into video_assets (owner_type, owner_id, provider, status, version, original_filename, created_by)
+      values (${input.ownerType}, ${input.ownerId}, 'local', 'uploading', ${version}, ${input.file.name.slice(0, 250)}, ${actorId}) returning id`;
+    await tx`insert into media_upload_jobs (video_asset_id, provider, status, file_name, file_size, mime_type, created_by)
+      values (${a.id}, 'local', 'uploading', ${input.file.name.slice(0, 250)}, ${input.file.size}, ${input.file.type || null}, ${actorId})`;
+    return a;
+  });
+  await fsp.mkdir(path.dirname(partFile(asset.id)), { recursive: true });
+  await fsp.writeFile(partFile(asset.id), Buffer.alloc(0));
+  await audit(actorId, 'video.local_upload_created', input.ownerType, input.ownerId, { asset: asset.id, file: input.file.name, size: input.file.size });
+  return { assetId: asset.id as string, chunkSize: LOCAL_CHUNK_BYTES };
+}
+
+async function localJob(assetId: string) {
+  const [a] = await sql`select va.id, va.status, va.provider, j.file_size from video_assets va join media_upload_jobs j on j.video_asset_id = va.id where va.id = ${assetId}`;
+  if (!a || a.provider !== 'local') throw new VideoError('Subida no encontrada.');
+  return a;
+}
+
+/** Bytes ya recibidos (para reanudar una subida interrumpida). */
+export async function localUploadOffset(assetId: string) {
+  const a = await localJob(assetId);
+  const size = await fsp.stat(partFile(assetId)).then((s) => s.size).catch(() => 0);
+  return { status: a.status as string, received: size, total: Number(a.file_size) };
+}
+
+export async function appendLocalChunk(assetId: string, offset: number, chunk: Buffer) {
+  const a = await localJob(assetId);
+  if (a.status !== 'uploading') throw new VideoError('Esta subida ya no admite más datos.');
+  if (chunk.length > LOCAL_CHUNK_BYTES * 2) throw new VideoError('Parte demasiado grande.');
+  const current = await fsp.stat(partFile(assetId)).then((s) => s.size).catch(() => -1);
+  if (current < 0) throw new VideoError('Falta el archivo temporal de la subida: empieza de nuevo.');
+  if (offset !== current) return { received: current, mismatch: true };
+  if (current + chunk.length > Number(a.file_size)) throw new VideoError('Se recibieron más datos de los anunciados.');
+  await fsp.appendFile(partFile(assetId), chunk);
+  return { received: current + chunk.length, mismatch: false };
+}
+
+/** Lee la duración del átomo «mvhd» de un MP4 (sin dependencias). */
+export function mp4Duration(buf: Buffer): number | null {
+  const i = buf.indexOf('mvhd', 0, 'latin1');
+  if (i < 4) return null;
+  const version = buf[i + 4];
+  const base = i + 8;
+  const timescale = version === 1 ? buf.readUInt32BE(base + 16) : buf.readUInt32BE(base + 8);
+  const duration = version === 1 ? Number(buf.readBigUInt64BE(base + 20)) : buf.readUInt32BE(base + 12);
+  return timescale > 0 && duration > 0 ? Math.round((duration / timescale) * 100) / 100 : null;
+}
+
+export async function completeLocalUpload(actorId: string, assetId: string) {
+  const a = await localJob(assetId);
+  if (a.status !== 'uploading') throw new VideoError('Esta subida ya se completó o falló.');
+  const file = partFile(assetId);
+  const size = (await fsp.stat(file)).size;
+  if (size !== Number(a.file_size)) throw new VideoError(`Faltan datos: llegaron ${size} de ${a.file_size} bytes.`);
+  const fh = await fsp.open(file, 'r');
+  const head = Buffer.alloc(Math.min(size, 8 * 1024 * 1024));
+  const tail = Buffer.alloc(Math.min(size, 8 * 1024 * 1024));
+  await fh.read(head, 0, head.length, 0);
+  await fh.read(tail, 0, tail.length, size - tail.length);
+  await fh.close();
+  const isMp4 = head.subarray(4, 8).toString('latin1') === 'ftyp';
+  const isWebm = head.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+  if (!isMp4 && !isWebm) {
+    await failAsset(assetId, 'El archivo no es un MP4 ni un WebM válido.');
+    await fsp.rm(file, { force: true });
+    throw new VideoError('El archivo no es un MP4 ni un WebM válido.');
+  }
+  const ext = isMp4 ? 'mp4' : 'webm';
+  const duration = isMp4 ? mp4Duration(head) ?? mp4Duration(tail) : null;
+  const dest = path.join(localRoot(), 'public', 'videos', `${assetId}.${ext}`);
+  await fsp.mkdir(path.dirname(dest), { recursive: true });
+  await fsp.rename(file, dest);
+  await sql`update video_assets set status = 'in_review', source_url = ${`/media/videos/${assetId}.${ext}`}, duration_seconds = ${duration}, error_message = null where id = ${assetId}`;
+  await sql`update media_upload_jobs set status = 'completed', completed_at = now() where video_asset_id = ${assetId}`;
+  await audit(actorId, 'video.local_upload_completed', 'video_asset', assetId, { size, duration });
+  return { status: 'in_review', duration };
+}
+
+export function localVideoExists(sourceUrl: string | null) {
+  if (!sourceUrl?.startsWith('/media/videos/')) return false;
+  return fs.existsSync(path.join(localRoot(), 'public', sourceUrl.replace(/^\/media\//, '')));
 }

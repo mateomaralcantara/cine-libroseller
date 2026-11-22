@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { sql } from '@/lib/db';
 import { env } from '@/lib/env';
 import { titleReadiness, episodeReadiness } from '@/lib/catalog/admin';
+import { localUploadsAvailable } from '@/lib/video/service';
 import { episodePath } from '@/lib/format';
 import { ActionForm, StatusPill } from '../ui';
 import { Field, TextArea, StatusControls, VideoPanel, ImagePanel, SubtitlePanel } from '../blocks';
@@ -51,6 +52,7 @@ export default async function UploadWizard({ searchParams }: { searchParams: Pro
   const videoDone = !!current;
   const publishedDone = e.status === 'published' || e.status === 'scheduled';
   const publicHref = episodePath(ep.slug, ep.season, ep.number);
+  const localOk = localUploadsAvailable().ok;
   const doneCount = [textsDone, imagesDone, !!rights, seriesDone, videoDone, publishedDone].filter(Boolean).length;
 
   return (
@@ -114,11 +116,19 @@ export default async function UploadWizard({ searchParams }: { searchParams: Pro
       </Step>
 
       <Step n={5} title="Video del episodio" done={videoDone}>
-        <p className="text-sm text-mist">
-          Sube el archivo maestro. Mux lo convierte en streaming adaptativo (tarda unos minutos); esta página se actualiza sola.
-          Cuando aparezca <strong className="text-cream">«En revisión»</strong>, pulsa <strong className="text-cream">Previsualizar</strong> y después <strong className="text-cream">Aprobar video</strong>.
-        </p>
-        {!env.mux.configured && <p className="rounded-lg border border-warn/40 bg-warn/5 p-3 text-sm text-warn">Mux no está configurado. Añade MUX_TOKEN_ID y MUX_TOKEN_SECRET en .env.local, reinicia «npm run dev» y comprueba con «npm run env:check».</p>}
+        {env.mux.configured ? (
+          <p className="text-sm text-mist">
+            Sube el archivo maestro. Mux lo convierte en streaming adaptativo (tarda unos minutos); esta página se actualiza sola.
+            Cuando aparezca <strong className="text-cream">«En revisión»</strong>, pulsa <strong className="text-cream">Previsualizar</strong> y después <strong className="text-cream">Aprobar video</strong>.
+          </p>
+        ) : localOk ? (
+          <p className="text-sm text-mist">
+            <strong className="text-cream">Modo local de prueba (sin Mux).</strong> Arrastra el MP4 del episodio (H.264 + AAC): se guarda en este equipo y queda
+            <strong className="text-cream"> «En revisión»</strong> en cuanto termina la subida. Pulsa <strong className="text-cream">Previsualizar</strong> y después <strong className="text-cream">Aprobar video</strong>.
+          </p>
+        ) : (
+          <p className="rounded-lg border border-warn/40 bg-warn/5 p-3 text-sm text-warn">Para subir el archivo, pon STORAGE_DRIVER=local en .env.local (prueba en tu PC) o configura Mux. Reinicia «npm run dev» después.</p>
+        )}
         <VideoPanel ownerType="episode" ownerId={e.id} previewHref={`${publicHref}/ver`} />
       </Step>
 

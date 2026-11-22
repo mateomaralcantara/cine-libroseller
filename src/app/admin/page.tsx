@@ -39,7 +39,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </Panel>
         <Panel title="Estado del streaming">
           <ul className="grid gap-2 text-sm">
-            <li className="flex justify-between"><span>Proveedor de video</span><span className={env.mux.configured ? 'text-ok' : 'text-warn'}>{env.mux.configured ? 'Mux conectado' : 'Mux sin configurar (sólo enlaces)'}</span></li>
+            <li className="flex justify-between"><span>Proveedor de video</span><span className={env.mux.configured ? 'text-ok' : 'text-warn'}>{env.mux.configured ? 'Mux conectado' : env.storage.driver === 'local' ? 'Modo local de prueba (sin Mux)' : 'Mux sin configurar (sólo enlaces)'}</span></li>
             <li className="flex justify-between"><span>Webhooks de Mux</span><span className={env.mux.webhookSecret ? 'text-ok' : 'text-warn'}>{env.mux.webhookSecret ? 'Verificación activa' : 'Falta MUX_WEBHOOK_SECRET'}</span></li>
             <li className="flex justify-between"><span>Reproducción firmada</span><span className={env.mux.signingKeyId ? 'text-ok' : 'text-dim'}>{env.mux.signingKeyId ? 'Disponible' : 'No configurada'}</span></li>
             <li className="flex justify-between"><span>Almacenamiento de imágenes</span><span>{env.storage.driver === 'supabase' ? 'Supabase Storage' : 'Disco local'}</span></li>

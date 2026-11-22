@@ -27,7 +27,7 @@ export default async function VideosAdmin() {
               <tr key={r.id} className="align-top">
                 <td className="p-3"><Link href={r.href} className="hover:text-gold-soft">{r.owner_name}</Link><p className="text-xs text-dim">{r.owner_type}</p></td>
                 <td>v{r.version}{r.is_current && <span className="ml-1 text-xs text-gold">vigente</span>}</td>
-                <td>{r.provider === 'mux' ? 'Mux' : 'Enlace'}</td>
+                <td>{r.provider === 'mux' ? 'Mux' : r.provider === 'local' ? 'Local' : 'Enlace'}</td>
                 <td><StatusPill status={r.status} video />{r.error_message && <p className="mt-1 max-w-xs text-xs text-bad">{r.error_message}</p>}</td>
                 <td><Duration seconds={r.duration_seconds} /></td>
                 <td>{r.max_resolution ?? '—'}</td>

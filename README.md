@@ -140,7 +140,7 @@ Detalles:
 ## Pruebas
 
 ```bash
-npm test   # 25 pruebas de integración contra PostgreSQL real (usa TEST_DATABASE_URL o cine_test local)
+npm test   # 33 pruebas de integración contra PostgreSQL real (usa TEST_DATABASE_URL o cine_test local)
 ```
 
 Cubren las 20 verificaciones obligatorias de la sección 32 a nivel de servidor:
@@ -189,6 +189,19 @@ Es un proyecto **independiente** de LibroSeller: no toca su aplicación ni su ba
    - Un video sustituido conserva sus versiones anteriores en `video_assets`.
 
 **Al añadir tablas nuevas** en futuras migraciones, activa RLS en ellas (`alter table … enable row level security`).
+
+## Primera prueba sin Mux (modo local)
+
+Para probar en tu PC sin contratar nada, con `STORAGE_DRIVER=local` y sin claves de Mux, el asistente `/admin/subir` sube el archivo **a tu propio equipo**:
+- Lo envía por partes de 8 MB y, si se corta, continúa donde iba.
+- Comprueba que el archivo es un video real.
+- Lee la duración del MP4.
+- Lo deja «En revisión» para previsualizarlo y aprobarlo.
+
+Requisitos y límites:
+- Usa un **MP4 en H.264 + AAC** (o WebM). El navegador lo reproduce tal cual, sin calidades adaptativas.
+- Los videos se guardan en `storage/public/videos/`. Sólo se entregan si el episodio está publicado; editores y administradores también pueden verlos para la previsualización.
+- **No sirve en Vercel** (no hay disco persistente). Para publicar en internet se usa Mux o un enlace a un CDN.
 
 ## Flujo para publicar el primer episodio
 

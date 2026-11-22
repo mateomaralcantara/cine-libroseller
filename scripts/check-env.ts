@@ -136,7 +136,10 @@ async function main() {
 
   section('Video (Mux)');
   const id = env('MUX_TOKEN_ID'); const secret = env('MUX_TOKEN_SECRET');
-  if (!id && !secret) ok('Mux sin configurar: podrás VINCULAR videos alojados en un CDN; la subida directa se activa al añadir las claves.');
+  if (!id && !secret) {
+    if ((env('STORAGE_DRIVER') || 'local') === 'local') ok('Mux sin configurar: modo local de prueba activo (subes el MP4 a este equipo desde /admin/subir).');
+    else ok('Mux sin configurar: podrás VINCULAR videos alojados en un CDN. Para subir archivos sin Mux usa STORAGE_DRIVER=local (sólo en tu PC).');
+  }
   else if (!id || !secret) fail('Falta una de las dos claves de Mux (MUX_TOKEN_ID y MUX_TOKEN_SECRET van juntas).');
   else {
     try {

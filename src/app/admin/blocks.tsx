@@ -8,7 +8,7 @@ import {
   uploadImageAction, deleteImageAction, uploadSubtitleAction, deleteSubtitleAction, linkVideoAction, approveVideoAction, refreshVideoAction,
 } from './actions';
 import { TrailerButton } from '@/components/interactive';
-import type { OwnerType } from '@/lib/video/service';
+import { localUploadsAvailable, type OwnerType } from '@/lib/video/service';
 
 export function Panel({ title, children, actions, id }: { title: string; children: React.ReactNode; actions?: React.ReactNode; id?: string }) {
   return (
@@ -93,6 +93,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
   const current = assets.find((a) => a.is_current);
   const review = assets.find((a) => a.status === 'in_review');
   const link = linkVideoAction.bind(null, ownerType, ownerId);
+  const local = localUploadsAvailable();
   return (
     <Panel title="Video" actions={current ? <span className="text-sm text-mist">Versión vigente: v{current.version} · <Duration seconds={current.duration_seconds} /> · {current.max_resolution ?? '—'}</span> : <span className="text-sm text-warn">Sin video aprobado</span>}>
       <AutoRefresh active={processing} every={8000} assetIds={assets.filter((a) => ['uploading', 'processing'].includes(a.status)).map((a) => a.id)} />
@@ -114,7 +115,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
       <div className="grid gap-6 lg:grid-cols-2">
             <div>
               <h3 className="mb-2 text-sm font-semibold text-gold-soft">Subir archivo maestro</h3>
-              <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} />
+              <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} localReady={local.ok} localReason={local.ok ? undefined : local.reason} />
             </div>
             <div>
               <h3 className="mb-2 text-sm font-semibold text-gold-soft">…o vincular video ya optimizado (HLS/MP4 en CDN)</h3>
@@ -129,7 +130,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
           <h3 className="mb-2 text-sm font-semibold text-gold-soft">Subir archivo maestro</h3>
-          <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} />
+          <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} localReady={local.ok} localReason={local.ok ? undefined : local.reason} />
         </div>
         <div>
           <h3 className="mb-2 text-sm font-semibold text-gold-soft">…o vincular video ya optimizado (HLS/MP4 en CDN)</h3>
@@ -147,7 +148,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
               {assets.map((a) => (
                 <tr key={a.id} className="align-top">
                   <td className="py-2.5">v{a.version}{a.is_current && <span className="ml-2 text-xs text-gold">vigente</span>}</td>
-                  <td>{a.provider === 'mux' ? `Mux${a.playback_policy === 'signed' ? ' · firmado' : ''}` : 'Enlace CDN'}</td>
+                  <td>{a.provider === 'mux' ? `Mux${a.playback_policy === 'signed' ? ' · firmado' : ''}` : a.provider === 'local' ? 'Local (este equipo)' : 'Enlace CDN'}</td>
                   <td><StatusPill status={a.status} video />{a.error_message && <p className="mt-1 max-w-xs text-xs text-bad">{a.error_message}</p>}</td>
                   <td><Duration seconds={a.duration_seconds} /></td>
                   <td className="max-w-[14rem] truncate text-xs text-dim">{a.original_filename ?? a.source_url}</td>
