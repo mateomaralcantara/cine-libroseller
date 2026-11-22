@@ -5,7 +5,7 @@ import { env } from '@/lib/env';
 import { STATUS_LABEL, formatDate } from '@/lib/format';
 import { ActionForm, ActButton, StatusPill, AutoRefresh, DirectUploader, Duration } from './ui';
 import {
-  uploadImageAction, deleteImageAction, uploadSubtitleAction, deleteSubtitleAction, linkVideoAction, approveVideoAction, refreshVideoAction,
+  uploadImageAction, deleteImageAction, uploadSubtitleAction, deleteSubtitleAction, linkVideoAction, approveVideoAction, refreshVideoAction, makePublicVideoAction,
 } from './actions';
 import { TrailerButton } from '@/components/interactive';
 import { localUploadsAvailable, type OwnerType } from '@/lib/video/service';
@@ -100,6 +100,13 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
       {review && (
         <div className="mb-5 rounded-xl border border-warn/40 bg-warn/5 p-4">
           <p className="font-medium text-warn">Versión v{review.version} procesada: revísala antes de aprobarla.</p>
+          {review.playback_policy === 'signed' && !env.mux.signingKeyId && (
+            <div className="mt-3 rounded-lg border border-bad/40 bg-bad/10 p-3 text-sm text-bad">
+              Este video se subió con <strong>reproducción firmada</strong>, pero faltan las claves de firma de Mux (MUX_SIGNING_KEY_ID y MUX_SIGNING_PRIVATE_KEY): no se podría ver.
+              Si el contenido es gratuito, hazlo público (no hace falta volver a subirlo):
+              <div className="mt-2"><ActButton className="btn btn-gold btn-sm" onAct={makePublicVideoAction.bind(null, review.id)}>Hacer pública la reproducción</ActButton></div>
+            </div>
+          )}
           <div className="mt-3 flex flex-wrap gap-2">
             {ownerType === 'trailer'
               ? <TrailerButton trailerId={ownerId} label="Previsualizar" className="btn btn-ghost btn-sm" preview />
@@ -115,7 +122,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
       <div className="grid gap-6 lg:grid-cols-2">
             <div>
               <h3 className="mb-2 text-sm font-semibold text-gold-soft">Subir archivo maestro</h3>
-              <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} localReady={local.ok} localReason={local.ok ? undefined : local.reason} />
+              <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} localReady={local.ok} localReason={local.ok ? undefined : local.reason} signingReady={!!(env.mux.signingKeyId && env.mux.signingPrivateKey)} />
             </div>
             <div>
               <h3 className="mb-2 text-sm font-semibold text-gold-soft">…o vincular video ya optimizado (HLS/MP4 en CDN)</h3>
@@ -130,7 +137,7 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
           <h3 className="mb-2 text-sm font-semibold text-gold-soft">Subir archivo maestro</h3>
-          <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} localReady={local.ok} localReason={local.ok ? undefined : local.reason} />
+          <DirectUploader ownerType={ownerType} ownerId={ownerId} muxReady={env.mux.configured} localReady={local.ok} localReason={local.ok ? undefined : local.reason} signingReady={!!(env.mux.signingKeyId && env.mux.signingPrivateKey)} />
         </div>
         <div>
           <h3 className="mb-2 text-sm font-semibold text-gold-soft">…o vincular video ya optimizado (HLS/MP4 en CDN)</h3>
@@ -153,7 +160,10 @@ export async function VideoPanel({ ownerType, ownerId, previewHref }: { ownerTyp
                   <td><Duration seconds={a.duration_seconds} /></td>
                   <td className="max-w-[14rem] truncate text-xs text-dim">{a.original_filename ?? a.source_url}</td>
                   <td className="text-xs text-dim">{formatDate(a.created_at, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
-                  <td>{['uploading', 'processing', 'error'].includes(a.status) && <ActButton onAct={refreshVideoAction.bind(null, a.id)}>Consultar proveedor</ActButton>}</td>
+                  <td className="space-y-1">
+                    {['uploading', 'processing', 'error'].includes(a.status) && <ActButton onAct={refreshVideoAction.bind(null, a.id)}>Consultar proveedor</ActButton>}
+                    {a.provider === 'mux' && a.playback_policy === 'signed' && a.provider_asset_id && <ActButton onAct={makePublicVideoAction.bind(null, a.id)} confirmText="¿Hacer pública la reproducción de este video? Cualquiera con el enlace del episodio publicado podrá verlo.">Hacer pública</ActButton>}
+                  </td>
                 </tr>
               ))}
             </tbody>

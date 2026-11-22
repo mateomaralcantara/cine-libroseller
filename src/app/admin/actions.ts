@@ -10,7 +10,7 @@ import {
   createTitle, updateTitle, setTitleStatus, createSeason, updateSeason, createEpisode, updateEpisode, setEpisodeStatus,
   addRights, setAvailability, upsertRelease, ValidationError, type PubStatus,
 } from '@/lib/catalog/admin';
-import { linkVideo, approveAsset, refreshFromProvider, VideoError, type OwnerType } from '@/lib/video/service';
+import { linkVideo, approveAsset, refreshFromProvider, makeAssetPublic, VideoError, type OwnerType } from '@/lib/video/service';
 import { storeImage, storeSubtitle, deleteObject, UploadError } from '@/lib/media/storage';
 
 export type ActionState = { ok?: string; error?: string; fields?: Record<string, string> } | undefined;
@@ -186,6 +186,12 @@ export async function linkVideoAction(ownerType: OwnerType, ownerId: string, _p:
 export async function approveVideoAction(assetId: string) {
   const v = await requireEditor();
   const r = await run(async () => { await approveAsset(v.id, assetId); return 'Video aprobado.'; });
+  if (r?.error) throw new Error(r.error);
+}
+
+export async function makePublicVideoAction(assetId: string) {
+  const v = await requireEditor();
+  const r = await run(async () => { await makeAssetPublic(v.id, assetId); return 'El video ahora es de reproducción pública.'; });
   if (r?.error) throw new Error(r.error);
 }
 

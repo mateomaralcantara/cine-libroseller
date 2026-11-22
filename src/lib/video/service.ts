@@ -267,6 +267,26 @@ export async function refreshFromProvider(actorId: string, assetId: string, { qu
  * Paso 9: el administrador revisó la previsualización privada y aprueba el video.
  * Pasa a «listo» y se convierte en la versión vigente de la obra (las anteriores quedan en el historial).
  */
+/**
+ * Convierte un video de Mux con reproducción firmada en público (para contenido gratuito subido con la
+ * casilla «firmada» marcada por error). Añade un playback ID público en Mux: no hay que volver a subirlo.
+ */
+export async function makeAssetPublic(actorId: string, assetId: string) {
+  const [a] = await sql`select * from video_assets where id = ${assetId}`;
+  if (!a) throw new VideoError('Video no encontrado.');
+  if (a.provider !== 'mux') throw new VideoError('Sólo los videos de Mux tienen reproducción firmada.');
+  if (a.playback_policy === 'public') return a;
+  if (!a.provider_asset_id) throw new VideoError('Mux todavía no ha creado el video: espera a que termine de procesarse.');
+  try {
+    const pb = await mux.createPlaybackId(a.provider_asset_id, 'public');
+    const [row] = await sql`update video_assets set playback_id = ${pb.id}, playback_policy = 'public' where id = ${assetId} returning *`;
+    await audit(actorId, 'video.made_public', 'video_asset', assetId, { previous: a.playback_id });
+    return row;
+  } catch (e) {
+    throw new VideoError(e instanceof ProviderError ? e.message : 'No se pudo cambiar la reproducción en Mux.');
+  }
+}
+
 export async function approveAsset(actorId: string, assetId: string) {
   return sql.begin(async (tx) => {
     const [a] = await tx`select * from video_assets where id = ${assetId} for update`;

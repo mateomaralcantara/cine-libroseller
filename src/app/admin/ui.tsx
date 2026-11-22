@@ -75,7 +75,7 @@ const VIDEO_EXT = /\.(mp4|mov|m4v|mkv|webm|avi|mpg|mpeg|mxf)$/i;
 const fmtBytes = (n: number) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)} GB` : `${(n / 1024 ** 2).toFixed(0)} MB`);
 const fmtEta = (s: number) => (!Number.isFinite(s) || s <= 0 ? '' : s < 60 ? `${Math.ceil(s)} s` : s < 3600 ? `${Math.ceil(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.ceil((s % 3600) / 60)} min`);
 
-export function DirectUploader({ ownerType, ownerId, muxReady, localReady = false, localReason }: { ownerType: 'episode' | 'title' | 'trailer'; ownerId: string; muxReady: boolean; localReady?: boolean; localReason?: string }) {
+export function DirectUploader({ ownerType, ownerId, muxReady, localReady = false, localReason, signingReady = false }: { ownerType: 'episode' | 'title' | 'trailer'; ownerId: string; muxReady: boolean; localReady?: boolean; localReason?: string; signingReady?: boolean }) {
   const mode: 'mux' | 'local' | 'none' = muxReady ? 'mux' : localReady ? 'local' : 'none';
   const pausedRef = useRef(false);
   const cancelledRef = useRef(false);
@@ -258,7 +258,10 @@ export function DirectUploader({ ownerType, ownerId, muxReady, localReady = fals
           : <><span className="font-semibold">Arrastra aquí el archivo del episodio</span><span className="text-sm text-dim">o haz clic para elegirlo · {mode === 'local' ? 'MP4 (H.264 + AAC) o WebM' : 'MP4, MOV, MKV, WebM o MXF'}</span></>}
       </label>
       {mode === 'mux'
-        ? <label className="flex items-center gap-2 text-sm text-mist"><input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} className="accent-[var(--color-gold)]" /> Reproducción firmada (sólo para contenido restringido; requiere las claves de firma de Mux)</label>
+        ? <div className="grid gap-1">
+            <label className="flex items-center gap-2 text-sm text-mist"><input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} className="accent-[var(--color-gold)]" disabled={!signingReady} /> Reproducción firmada (sólo para contenido de pago o restringido; déjala sin marcar si el episodio es gratuito)</label>
+            {!signingReady && <p className="pl-6 text-xs text-dim">No disponible: faltan las claves de firma de Mux (MUX_SIGNING_KEY_ID y MUX_SIGNING_PRIVATE_KEY).</p>}
+          </div>
         : <p className="rounded-lg border border-line bg-white/[0.03] p-3 text-xs text-mist"><strong className="text-cream">Modo local de prueba (sin Mux):</strong> el archivo se guarda en la carpeta «storage» de este equipo y se reproduce tal cual, sin calidades adaptativas. Usa un MP4 en H.264 + AAC. Para publicar en internet hará falta Mux o un CDN.</p>}
       <button type="button" className="btn btn-gold justify-self-start" disabled={!file} onClick={start}>Subir episodio</button>
       {message && <p role={message.kind === 'error' ? 'alert' : 'status'} className={`text-sm ${message.kind === 'error' ? 'text-bad' : message.kind === 'ok' ? 'text-ok' : 'text-mist'}`}>{message.text}</p>}

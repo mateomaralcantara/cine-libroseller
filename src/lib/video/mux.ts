@@ -67,6 +67,7 @@ export const mux = {
   getUpload: (id: string) => call<MuxUpload>('GET', `/video/v1/uploads/${encodeURIComponent(id)}`),
   cancelUpload: (id: string) => call<MuxUpload>('PUT', `/video/v1/uploads/${encodeURIComponent(id)}/cancel`),
   getAsset: (id: string) => call<MuxAsset>('GET', `/video/v1/assets/${encodeURIComponent(id)}`),
+  createPlaybackId: (assetId: string, policy: 'public' | 'signed') => call<{ id: string; policy: 'public' | 'signed' }>('POST', `/video/v1/assets/${encodeURIComponent(assetId)}/playback-ids`, { policy }),
 };
 
 /**
