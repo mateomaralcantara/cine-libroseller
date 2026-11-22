@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { PageShell } from '@/components/PageShell';
 
+export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Privacidad y datos', alternates: { canonical: '/privacidad' } };
 
 export default function Privacy() {

@@ -16,8 +16,22 @@ function create(): Sql {
   });
 }
 
-/** Cliente SQL compartido (una instancia por proceso). */
-export const sql: Sql = globalForDb.__cineSql ?? (globalForDb.__cineSql = create());
+function instance(): Sql {
+  return globalForDb.__cineSql ?? (globalForDb.__cineSql = create());
+}
+
+/**
+ * Cliente SQL compartido (una instancia por proceso). Se crea al primer uso, no al importar el módulo:
+ * así una DATABASE_URL ausente o errónea nunca rompe la compilación, sólo las peticiones que la necesitan.
+ */
+export const sql: Sql = new Proxy(function () {} as unknown as Sql, {
+  apply: (_t, _this, args) => (instance() as unknown as (...a: unknown[]) => unknown)(...args),
+  get: (_t, prop) => {
+    const target = instance() as unknown as Record<string | symbol, unknown>;
+    const value = target[prop];
+    return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+  },
+});
 
 export type Tx = Sql | postgres.TransactionSql;
 export type { Sql };

@@ -2,5 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "regions": ["iad1"],
-  "crons": [{ "path": "/api/v1/cron/publish", "schedule": "*/15 * * * *" }]
+  "crons": [{ "path": "/api/v1/cron/publish", "schedule": "17 10 * * *" }]
 }

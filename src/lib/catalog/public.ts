@@ -49,10 +49,11 @@ async function toCards(rows: Record<string, any>[]): Promise<TitleCard[]> { // e
     .filter((c) => c.images.poster || c.images.backdrop || c.images.banner);
 }
 
-const TITLE_COLS = sql`t.id, t.slug, t.type, t.title, t.tagline, t.synopsis_short, t.release_date, t.runtime_minutes, t.age_rating, t.access, t.published_at`;
+// Función (no constante) para no abrir la conexión al importar el módulo
+const titleCols = () => sql`t.id, t.slug, t.type, t.title, t.tagline, t.synopsis_short, t.release_date, t.runtime_minutes, t.age_rating, t.access, t.published_at`;
 
 export async function visibleTitles(where = sql``, order = sql`order by coalesce(t.published_at, t.created_at) desc`, limit = 24) {
-  const rows = await sql`select ${TITLE_COLS} from titles t where ${VISIBLE('t')} ${where} ${order} limit ${limit}`;
+  const rows = await sql`select ${titleCols()} from titles t where ${VISIBLE('t')} ${where} ${order} limit ${limit}`;
   return toCards(rows);
 }
 
@@ -161,7 +162,7 @@ export async function getEpisode(seriesSlug: string, seasonNumber: number, episo
 /** Recomendación nivel 1: géneros y categorías compartidos, sin repetir el título actual. */
 export async function relatedTitles(titleId: string, limit = 12) {
   const rows = await sql`
-    select ${TITLE_COLS}, (
+    select ${titleCols()}, (
       (select count(*) from title_genres a join title_genres b on a.genre_id = b.genre_id where a.title_id = t.id and b.title_id = ${titleId}) * 2 +
       (select count(*) from title_categories a join title_categories b on a.category_id = b.category_id where a.title_id = t.id and b.title_id = ${titleId})
     ) as score
@@ -218,7 +219,7 @@ export async function approvedComparisons(titleId?: string) {
 }
 
 export async function mostViewed(limit = 12) {
-  const rows = await sql`select ${TITLE_COLS}, count(pe.id) as plays from titles t
+  const rows = await sql`select ${titleCols()}, count(pe.id) as plays from titles t
     join playback_events pe on pe.title_id = t.id and pe.event_type = 'play_valid' and pe.created_at > now() - interval '30 days'
     where ${VISIBLE('t')} group by t.id having count(pe.id) > 0 order by plays desc limit ${limit}`;
   return toCards(rows);
@@ -297,7 +298,7 @@ export async function continueWatching(viewerProfileId: string, limit = 12) {
 }
 
 export async function watchlistTitles(viewerProfileId: string) {
-  const rows = await sql`select ${TITLE_COLS} from watchlist_items wi join watchlists w on w.id = wi.watchlist_id and w.is_default
+  const rows = await sql`select ${titleCols()} from watchlist_items wi join watchlists w on w.id = wi.watchlist_id and w.is_default
     join titles t on t.id = wi.title_id where w.viewer_profile_id = ${viewerProfileId} and ${VISIBLE('t')} order by wi.added_at desc`;
   return toCards(rows);
 }
@@ -309,7 +310,7 @@ export async function recommendedFor(viewerProfileId: string, limit = 12) {
       select title_id from watch_progress where viewer_profile_id = ${viewerProfileId}
       union select wi.title_id from watchlist_items wi join watchlists w on w.id = wi.watchlist_id where w.viewer_profile_id = ${viewerProfileId}
     ), liked as (select distinct tg.genre_id from title_genres tg where tg.title_id in (select title_id from seen))
-    select ${TITLE_COLS}, (select count(*) from title_genres tg where tg.title_id = t.id and tg.genre_id in (select genre_id from liked)) as score
+    select ${titleCols()}, (select count(*) from title_genres tg where tg.title_id = t.id and tg.genre_id in (select genre_id from liked)) as score
     from titles t where ${VISIBLE('t')} and t.id not in (select title_id from seen)
     order by score desc, t.published_at desc nulls last limit ${limit}`;
   return toCards(rows.filter((r) => Number(r.score) > 0));
