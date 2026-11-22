@@ -83,23 +83,28 @@ Esta es la **Fase 1 (Streaming MVP)**. Incluye además las piezas de la Fase 2 q
 
 ## Desarrollo local
 
-Requisitos: Node 22+, PostgreSQL 15+ (local o Supabase).
+Requisitos: Node 22+ y una base PostgreSQL 15+. La forma más sencilla, también en Windows, es un proyecto gratuito de Supabase: *Project Settings → Database → Connection string → URI*.
+
+1. Copia `.env.example` como `.env.local` y pon tu `DATABASE_URL`. Para trabajar en local, añade `STORAGE_DRIVER=local`.
+2. Ejecuta cada comando por separado:
 
 ```bash
 npm install
 ```
 ```bash
-cp .env.example .env.local   # ajusta DATABASE_URL; para local: STORAGE_DRIVER=local
+npm run db:migrate
 ```
 ```bash
-npm run db:migrate && npm run db:seed
+npm run db:seed
 ```
 ```bash
-npm run admin:create -- tu@email.com "Tu nombre"   # imprime una contraseña generada
+npm run admin:create -- tu@email.com "Tu nombre"
 ```
 ```bash
-npm run dev    # http://localhost:3000  ·  panel en /admin
+npm run dev
 ```
+
+El sitio queda en http://localhost:3000 y el panel en `/admin`. `admin:create` imprime una contraseña generada; también puedes fijarla tú con `ADMIN_PASSWORD` en `.env.local`.
 
 Sin claves de Mux, el panel permite **vincular** videos ya alojados en un CDN (HLS `.m3u8` o MP4 por HTTPS con CORS). Con claves de Mux aparece la subida directa.
 
