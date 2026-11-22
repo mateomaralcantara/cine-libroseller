@@ -14,7 +14,9 @@
     "test": "vitest run",
     "test:e2e": "node tests/e2e/run.mjs",
     "env:check": "tsx scripts/check-env.ts",
-    "storage:setup": "tsx scripts/setup-storage.ts"
+    "storage:setup": "tsx scripts/setup-storage.ts",
+    "demo:seed": "tsx scripts/demo.ts seed",
+    "demo:clear": "tsx scripts/demo.ts clear"
   },
   "engines": {
     "node": ">=22"

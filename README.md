@@ -111,10 +111,36 @@ El sitio queda en http://localhost:3000 y el panel en `/admin`. `admin:create` i
 
 Sin claves de Mux, el panel permite **vincular** videos ya alojados en un CDN (HLS `.m3u8` o MP4 por HTTPS con CORS). Con claves de Mux aparece la subida directa.
 
+## Modo demostración (sólo local)
+
+Para ver la plataforma llena antes de tener los materiales oficiales:
+
+```bash
+npm run demo:seed
+```
+```bash
+npm run demo:clear
+```
+
+`demo:seed` carga 10 obras simuladas:
+- **Series**: «Los Convidados al Ágape» con E1 publicado, E2 programado con cuenta regresiva y E3 anunciado, además de personajes, tráiler, detrás de cámaras y antes/después; «La Isla de los Relojes Parados»; «Crónicas del Barrio Alto».
+- **Películas**: «El Peso de la Luz», «Santo Domingo, 1965», «La Última Página» (requiere cuenta) y «Memoria Sintética» (con aviso de IA).
+- **Cortometraje**: «Sal y Viento».
+- **Documental**: «Voces del Cibao».
+- **Próximo estreno**: «El Faro de Samaná».
+
+Detalles:
+- Las imágenes se generan en el momento (arte abstracto, sin personas reales).
+- Los videos son películas libres de prueba (*Big Buck Bunny* y *Tears of Steel*, Blender Foundation, CC BY; señal de prueba de Apple) servidas por HLS desde sus CDN públicos.
+- No se generan estadísticas falsas.
+- Mientras está activa, el sitio muestra una franja «Modo demostración».
+
+`demo:clear` borra todo lo creado y deja la serie inaugural exactamente como estaba. La demo se niega a cargarse fuera de `localhost` (salvo `DEMO_FORCE=1`) y no toca la serie inaugural si ya tiene materiales reales.
+
 ## Pruebas
 
 ```bash
-npm test   # 23 pruebas de integración contra PostgreSQL real (usa TEST_DATABASE_URL o cine_test local)
+npm test   # 25 pruebas de integración contra PostgreSQL real (usa TEST_DATABASE_URL o cine_test local)
 ```
 
 Cubren las 20 verificaciones obligatorias de la sección 32 a nivel de servidor:
