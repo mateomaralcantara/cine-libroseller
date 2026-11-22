@@ -92,6 +92,9 @@ Requisitos: Node 22+ y una base PostgreSQL 15+. La forma más sencilla, también
 npm install
 ```
 ```bash
+npm run env:check   # verifica .env.local y la conexión, sin mostrar contraseñas ni claves
+```
+```bash
 npm run db:migrate
 ```
 ```bash

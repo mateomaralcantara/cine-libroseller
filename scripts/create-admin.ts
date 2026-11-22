@@ -1,5 +1,6 @@
 // Crea (o promueve) una cuenta de administración.
 // Uso: ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run admin:create   (o: npm run admin:create -- email "Nombre")
+import './load-env';
 import crypto from 'node:crypto';
 import postgres from 'postgres';
 import { databaseUrl } from './database-url';

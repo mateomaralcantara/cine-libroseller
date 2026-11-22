@@ -1,5 +1,6 @@
 // Datos base del catálogo. Idempotente: se puede ejecutar varias veces.
 // NO crea videos, imágenes, usuarios ficticios ni estadísticas: esos materiales los carga el administrador.
+import './load-env';
 import postgres from 'postgres';
 import { databaseUrl } from './database-url';
 

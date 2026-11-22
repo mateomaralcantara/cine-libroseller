@@ -1,4 +1,5 @@
 // Aplica en orden las migraciones de supabase/migrations que aún no se hayan ejecutado.
+import './load-env';
 import fs from 'node:fs';
 import path from 'node:path';
 import postgres from 'postgres';
