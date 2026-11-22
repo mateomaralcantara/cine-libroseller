@@ -125,6 +125,7 @@ export async function demoSeed({ log = console.log } = {}) {
   }
 
   log('Cargando la demostración…');
+  try {
 
   // ------------------------------------------------------------------ 1. Serie inaugural (materiales simulados)
   const conv = inaugural.id as string;
@@ -260,6 +261,15 @@ export async function demoSeed({ log = console.log } = {}) {
   }
 
   await sql`insert into system_settings (key, value) values ('demo', ${sql.json(state as never)})`;
+  } catch (e) {
+    // Si algo falla a mitad, se deshace lo creado: nunca quedan datos de demostración huérfanos
+    await undo(state);
+    const msg = (e as Error).message;
+    const hint = /Storage|SUPABASE|bucket/i.test(msg)
+      ? ' Revisa el almacenamiento: para probar en tu PC pon STORAGE_DRIVER=local en .env.local, o crea el bucket con «npm run storage:setup».'
+      : '';
+    throw new Error(`No se pudo cargar la demostración (se deshizo todo lo creado): ${msg}.${hint}`);
+  }
   log(`\nDemostración lista: 10 obras (3 series, 5 películas, 1 corto, 1 documental) y 4 próximos estrenos.`);
   log('Arranca «npm run dev» y abre http://localhost:3000. Para borrarla: «npm run demo:clear».');
   return state;
@@ -269,6 +279,11 @@ export async function demoClear({ log = console.log } = {}) {
   const [row] = await sql`select value from system_settings where key = 'demo'`;
   if (!row) { log('No hay ninguna demostración cargada.'); return; }
   const state = row.value as DemoState;
+  await undo(state);
+  log(`Demostración eliminada: ${state.created.length} registros borrados y ${state.updated.length} restaurados. La serie inaugural vuelve a estar en borrador.`);
+}
+
+async function undo(state: DemoState) {
   await sql.begin(async (tx) => {
     // Borra lo creado en orden inverso (los hijos antes que los padres)
     for (const c of [...state.created].reverse()) {
@@ -285,7 +300,6 @@ export async function demoClear({ log = console.log } = {}) {
     await tx`delete from system_settings where key = 'demo'`;
   });
   for (const f of state.files) await deleteObject(f).catch(() => {});
-  log(`Demostración eliminada: ${state.created.length} registros borrados y ${state.updated.length} restaurados. La serie inaugural vuelve a estar en borrador.`);
 }
 
 if (require.main === module) {

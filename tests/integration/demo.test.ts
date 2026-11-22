@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll } from 'vitest';
-import { resetDb } from '../helpers';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { resetDb, mockFetch } from '../helpers';
 import { sql } from '@/lib/db';
 import { getHomeSections, upcomingReleases, searchCatalog } from '@/lib/catalog/public';
 import { resolvePlayback } from '@/lib/playback';
@@ -33,6 +33,17 @@ describe('modo demostración', () => {
     // Al borrar, todo vuelve exactamente como estaba
     await demoClear(quiet);
     expect(await snapshot()).toEqual(before);
+  });
+
+  it('si falla a mitad (p. ej. Supabase Storage sin bucket) deshace todo lo creado', async () => {
+    const before = await snapshot();
+    vi.stubEnv('STORAGE_DRIVER', 'supabase'); vi.stubEnv('SUPABASE_URL', 'https://demo.supabase.co'); vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', 'k');
+    mockFetch({ 'https://demo.supabase.co/': () => new Response('{"error":"Bucket not found"}', { status: 400 }) });
+    await expect(demoSeed(quiet)).rejects.toThrow(/se deshizo todo lo creado.*STORAGE_DRIVER=local/);
+    vi.unstubAllEnvs(); vi.unstubAllGlobals();
+    expect(await snapshot()).toEqual(before);
+    const [demo] = await sql`select 1 from system_settings where key = 'demo'`;
+    expect(demo).toBeUndefined();
   });
 
   it('no toca una serie inaugural con materiales reales', async () => {

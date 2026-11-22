@@ -83,6 +83,11 @@ async function main() {
         else ok(`${admins} ${admins === 1 ? 'cuenta' : 'cuentas'} de administración`);
         const [{ series }] = await sql`select count(*)::int as series from titles where slug = 'los-convidados-al-agape'`;
         if (series) ok('Serie inaugural «Los Convidados al Ágape» creada');
+        const [demo] = await sql`select 1 from system_settings where key = 'demo'`;
+        const [{ visibles }] = await sql`select count(*)::int as visibles from titles where status = 'published'`;
+        if (demo) ok(`Modo demostración cargado (${visibles} obras publicadas). Se borra con «npm run demo:clear».`);
+        else if (!visibles) warn('Aún no hay obras publicadas: el sitio mostrará «llegarán muy pronto». Para verlo lleno: «npm run demo:seed».');
+        else ok(`${visibles} ${visibles === 1 ? 'obra publicada' : 'obras publicadas'}`);
       }
     } catch (e) {
       fail(`No se pudo conectar: ${explainDbError(e)}`);
