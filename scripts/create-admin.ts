@@ -2,11 +2,11 @@
 // Uso: ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run admin:create   (o: npm run admin:create -- email "Nombre")
 import crypto from 'node:crypto';
 import postgres from 'postgres';
+import { databaseUrl } from './database-url';
 import { hashPassword, passwordProblem } from '../src/lib/auth/password';
 
 async function main() {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error('Falta DATABASE_URL');
+  const url = databaseUrl();
   const email = (process.argv[2] || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   const name = process.argv[3] || process.env.ADMIN_NAME || 'Administración';
   if (!email) throw new Error('Indica el email: npm run admin:create -- tu@email.com "Tu nombre"');

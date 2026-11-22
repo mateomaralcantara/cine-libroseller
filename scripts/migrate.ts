@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import postgres from 'postgres';
+import { databaseUrl } from './database-url';
 
 export async function migrate(databaseUrl: string, { log = true } = {}) {
   const sql = postgres(databaseUrl, { max: 1, onnotice: () => {} });
@@ -26,7 +27,6 @@ export async function migrate(databaseUrl: string, { log = true } = {}) {
 }
 
 if (require.main === module) {
-  const url = process.env.DATABASE_URL;
-  if (!url) { console.error('Falta DATABASE_URL'); process.exit(1); }
+  const url = databaseUrl();
   migrate(url).then(() => console.log('Migraciones al día.')).catch((e) => { console.error(e); process.exit(1); });
 }

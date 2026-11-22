@@ -1,4 +1,8 @@
 // Variables de entorno tipadas. Los secretos sólo se leen en el servidor.
+
+export class ConfigError extends Error {
+  constructor(message: string) { super(message); this.name = 'Error de configuración'; }
+}
 function optional(name: string): string | undefined {
   const v = process.env[name];
   return v && v.trim() ? v.trim() : undefined;
@@ -7,7 +11,10 @@ function optional(name: string): string | undefined {
 export const env = {
   get databaseUrl() {
     const v = optional('DATABASE_URL');
-    if (!v) throw new Error('Falta DATABASE_URL');
+    if (!v) throw new ConfigError('Falta DATABASE_URL. Copia .env.example como .env.local y pon la cadena de conexión de tu base de datos.');
+    if (/xxxx|\[TU-CONTRASEÑA\]|CONTRASEÑA@/i.test(v)) {
+      throw new ConfigError('DATABASE_URL todavía tiene el valor de ejemplo de .env.example. En Supabase ve a Project Settings → Database → Connection string → URI, cópiala en .env.local (con tu contraseña real) y reinicia «npm run dev».');
+    }
     return v;
   },
   get siteUrl() {

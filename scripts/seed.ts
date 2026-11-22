@@ -1,6 +1,7 @@
 // Datos base del catálogo. Idempotente: se puede ejecutar varias veces.
 // NO crea videos, imágenes, usuarios ficticios ni estadísticas: esos materiales los carga el administrador.
 import postgres from 'postgres';
+import { databaseUrl } from './database-url';
 
 const GENRES = [
   ['drama', 'Drama'], ['misterio', 'Misterio'], ['suspenso', 'Suspenso'], ['historico', 'Histórico'],
@@ -85,7 +86,6 @@ export async function seed(databaseUrl: string, { log = true } = {}) {
 }
 
 if (require.main === module) {
-  const url = process.env.DATABASE_URL;
-  if (!url) { console.error('Falta DATABASE_URL'); process.exit(1); }
+  const url = databaseUrl();
   seed(url).then(() => console.log('Catálogo base listo.')).catch((e) => { console.error(e); process.exit(1); });
 }
