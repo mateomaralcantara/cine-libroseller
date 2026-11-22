@@ -6,11 +6,12 @@
 -- `anon` y `authenticated` no pueden leer ni escribir nada.
 --
 -- Sólo se abren, en lectura, los datos de catálogo ya publicados.
+-- Únicamente se tocan las tablas de esta plataforma: nunca tablas de otras aplicaciones.
 
 do $$
 declare t text;
 begin
-  for t in select tablename from pg_tables where schemaname = 'public' and tablename <> 'schema_migrations'
+  foreach t in array array['profiles', 'user_sessions', 'viewer_profiles', 'viewer_preferences', 'genres', 'categories', 'titles', 'title_genres', 'title_categories', 'collections', 'collection_items', 'seasons', 'episodes', 'people', 'characters', 'character_appearances', 'title_credits', 'media_images', 'media_comparisons', 'video_assets', 'video_encodings', 'video_tracks', 'subtitle_tracks', 'trailers', 'media_upload_jobs', 'watch_progress', 'watch_history', 'playback_events', 'watchlists', 'watchlist_items', 'release_schedules', 'content_availability', 'content_rights', 'featured_content', 'homepage_sections', 'homepage_section_items', 'products', 'orders', 'payments', 'subscriptions', 'access_entitlements', 'sponsors', 'sponsorship_placements', 'newsletter_subscriptions', 'release_notifications', 'contact_requests', 'admin_audit_logs', 'content_revisions', 'system_settings', 'webhook_events']
   loop
     execute format('alter table %I enable row level security', t);
     execute format('alter table %I force row level security', t);
@@ -21,7 +22,7 @@ end $$;
 do $$
 declare t text;
 begin
-  for t in select tablename from pg_tables where schemaname = 'public' and tablename <> 'schema_migrations'
+  foreach t in array array['profiles', 'user_sessions', 'viewer_profiles', 'viewer_preferences', 'genres', 'categories', 'titles', 'title_genres', 'title_categories', 'collections', 'collection_items', 'seasons', 'episodes', 'people', 'characters', 'character_appearances', 'title_credits', 'media_images', 'media_comparisons', 'video_assets', 'video_encodings', 'video_tracks', 'subtitle_tracks', 'trailers', 'media_upload_jobs', 'watch_progress', 'watch_history', 'playback_events', 'watchlists', 'watchlist_items', 'release_schedules', 'content_availability', 'content_rights', 'featured_content', 'homepage_sections', 'homepage_section_items', 'products', 'orders', 'payments', 'subscriptions', 'access_entitlements', 'sponsors', 'sponsorship_placements', 'newsletter_subscriptions', 'release_notifications', 'contact_requests', 'admin_audit_logs', 'content_revisions', 'system_settings', 'webhook_events']
   loop
     execute format('create policy app_owner_all on %I for all to current_user using (true) with check (true)', t);
   end loop;

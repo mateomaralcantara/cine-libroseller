@@ -139,9 +139,9 @@ Las capturas quedan en `tests/e2e/artifacts/`.
 
 Es un proyecto **independiente** de LibroSeller: no toca su aplicación ni su base de datos.
 
-1. **Supabase**: crea un proyecto nuevo (no reutilices la base de LibroSeller).
+1. **Supabase**: crea un proyecto **nuevo y exclusivo** (no reutilices la base de LibroSeller ni la de otra app). `npm run db:migrate` se niega a escribir en una base que ya tenga tablas de otra aplicación.
    - Aplica las migraciones: `DATABASE_URL=<cadena directa, puerto 5432> npm run db:migrate && npm run db:seed`. También funciona con `supabase db push`.
-   - Crea el bucket **público** `media`.
+   - Crea el bucket **público** `media` con `npm run storage:setup` (necesita `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`).
    - Crea el primer administrador: `npm run admin:create -- correo "Nombre"`.
 2. **Mux**:
    - Crea un *Access Token* (Mux Video lectura/escritura).

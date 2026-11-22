@@ -13,7 +13,8 @@
     "admin:create": "tsx scripts/create-admin.ts",
     "test": "vitest run",
     "test:e2e": "node tests/e2e/run.mjs",
-    "env:check": "tsx scripts/check-env.ts"
+    "env:check": "tsx scripts/check-env.ts",
+    "storage:setup": "tsx scripts/setup-storage.ts"
   },
   "engines": {
     "node": ">=22"

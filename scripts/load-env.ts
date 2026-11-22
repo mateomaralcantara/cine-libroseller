@@ -6,15 +6,16 @@ import path from 'node:path';
 
 export function parseEnv(text: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const rawLine of text.replace(/^﻿/, '').split(/\r?\n/)) {
+  for (const rawLine of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith('#')) continue;
     const m = line.match(/^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
     if (!m) continue;
     let value = m[2];
-    const quoted = value.match(/^(['"])([\s\S]*)\1$/);
+    const quoted = value.match(/^(['"])([\s\S]*?)\1\s*(#.*)?$/);
+    // Igual que Next.js (dotenv): sin comillas, todo lo que sigue a «#» es comentario
     if (quoted) value = quoted[2];
-    else value = value.replace(/\s+#.*$/, '').trim(); // comentario al final de la línea
+    else value = value.split('#')[0].trim();
     if (!(m[1] in out)) out[m[1]] = value;
   }
   return out;

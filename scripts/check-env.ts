@@ -6,6 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import postgres from 'postgres';
 import { passwordProblem } from '../src/lib/auth/password';
+import { inspectDb, conflictMessage } from './db-inspect';
 
 let errors = 0;
 let warnings = 0;
@@ -66,14 +67,13 @@ async function main() {
       const t = Date.now();
       const [{ version }] = await sql`select version()`;
       ok(`Conexión correcta (${Date.now() - t} ms) · ${String(version).split(' on ')[0]}`);
-      const [{ exists }] = await sql`select to_regclass('public.schema_migrations') is not null as exists`;
-      const files = fs.readdirSync(path.resolve('supabase/migrations')).filter((f) => f.endsWith('.sql')).map((f) => f.replace(/\.sql$/, '')).sort();
-      if (!exists) fail('La base de datos está vacía: ejecuta «npm run db:migrate».');
-      else {
-        const done = new Set((await sql`select version from schema_migrations`).map((r) => r.version as string));
-        const pending = files.filter((f) => !done.has(f));
-        if (pending.length) fail(`Migraciones pendientes (${pending.length}): ejecuta «npm run db:migrate».`);
-        else ok(`Migraciones al día (${files.length})`);
+      const state = await inspectDb(sql);
+      if (state.conflicts.length || (state.applied.length === 0 && state.foreign.length)) {
+        fail(conflictMessage(state).replace('así que NO se ha modificado nada', 'y no es una base exclusiva para esta plataforma').split('\n').join('\n    '));
+      } else if (state.pending.length) {
+        fail(state.applied.length ? `Migraciones pendientes (${state.pending.length}): ejecuta «npm run db:migrate».` : 'La base de datos está vacía: ejecuta «npm run db:migrate».');
+      } else {
+        ok(`Migraciones al día (${state.applied.length})`);
         const [{ genres }] = await sql`select count(*)::int as genres from genres`;
         const [{ sections }] = await sql`select count(*)::int as sections from homepage_sections`;
         if (!genres || !sections) fail('Faltan los datos base: ejecuta «npm run db:seed».');
@@ -113,12 +113,16 @@ async function main() {
     if (su && key && !PLACEHOLDER.test(su)) {
       try {
         const r = await fetch(`${su.replace(/\/$/, '')}/storage/v1/bucket/${bucket}`, { headers: { authorization: `Bearer ${key}`, apikey: key }, signal: AbortSignal.timeout(10_000) });
+        const body = await r.json().catch(() => ({})) as { public?: boolean; statusCode?: string | number; error?: string; message?: string };
+        const why = `${body.error ?? ''} ${body.message ?? ''}`;
         if (r.ok) {
-          const b = await r.json() as { public?: boolean };
-          if (b.public) ok(`Bucket «${bucket}» accesible y público`);
-          else fail(`El bucket «${bucket}» existe pero no es público: márcalo como público en Supabase Storage.`);
-        } else if (r.status === 404 || r.status === 400) fail(`No existe el bucket «${bucket}»: créalo en Supabase → Storage (público).`);
-        else fail(`Supabase Storage respondió ${r.status}: revisa SUPABASE_SERVICE_ROLE_KEY.`);
+          if (body.public) ok(`Bucket «${bucket}» accesible y público`);
+          else fail(`El bucket «${bucket}» existe pero no es público: márcalo como público en Supabase → Storage.`);
+        } else if (/jwt|jws|signature|unauthorized|invalid.*key/i.test(why) || r.status === 401 || r.status === 403) {
+          fail('Supabase rechazó SUPABASE_SERVICE_ROLE_KEY: copia la clave «service_role» (Project Settings → API Keys), no la «anon».');
+        } else if (String(body.statusCode) === '404' || /not found/i.test(why)) {
+          fail(`No existe el bucket «${bucket}»: ejecuta «npm run storage:setup» para crearlo (público).`);
+        } else fail(`Supabase Storage respondió ${r.status}: ${why.trim() || 'error desconocido'}`);
       } catch (e) { warn(`No se pudo comprobar Supabase Storage: ${(e as Error).message}`); }
     }
   } else fail(`STORAGE_DRIVER debe ser «local» o «supabase» (tiene «${driver}»).`);
@@ -156,7 +160,8 @@ async function main() {
 
   console.log(`\n${errors ? `✗ ${errors} ${errors === 1 ? 'problema' : 'problemas'}` : '✓ Configuración correcta'}${warnings ? ` · ${warnings} ${warnings === 1 ? 'aviso' : 'avisos'}` : ''}`);
   if (!errors) console.log('  Siguiente paso: npm run dev  →  http://localhost:3000');
-  process.exit(errors ? 1 : 0);
+  // Sin process.exit(): en Windows cerrar de golpe con conexiones abiertas provoca «Assertion failed … async.c»
+  process.exitCode = errors ? 1 : 0;
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => { console.error(e); process.exitCode = 1; });

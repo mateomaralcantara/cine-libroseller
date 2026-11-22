@@ -88,5 +88,5 @@ export async function seed(databaseUrl: string, { log = true } = {}) {
 
 if (require.main === module) {
   const url = databaseUrl();
-  seed(url).then(() => console.log('Catálogo base listo.')).catch((e) => { console.error(e); process.exit(1); });
+  seed(url).then(() => console.log('Catálogo base listo.')).catch((e) => { console.error(`✗ ${(e as Error).message}`); process.exitCode = 1; });
 }
