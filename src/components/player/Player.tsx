@@ -114,7 +114,9 @@ export function Player({ source, signedIn, autoPlay = true, variant = 'cinema', 
           setError('Tu navegador no puede reproducir este video. Prueba con una versión reciente de Chrome, Edge, Firefox o Safari.'); return;
         }
         usingHlsJs.current = true;
+        // Los subtítulos los pone nuestro <track>; hls.js no debe mostrar los del manifiesto por su cuenta
         const h = new Hls({ capLevelToPlayerSize: true, startLevel: saveData ? 0 : -1, maxBufferLength: saveData ? 15 : 30, enableWorker: true });
+        h.subtitleDisplay = false;
         hls.current = h;
         h.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
           setLevels(data.levels.map((l, i) => ({ index: i, label: l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)} kbps` })).reverse());
@@ -161,24 +163,50 @@ export function Player({ source, signedIn, autoPlay = true, variant = 'cinema', 
   useEffect(() => {
     const v = video.current;
     if (!v) return;
+    // Sólo se muestra UNA pista: la de nuestros archivos <track> del idioma elegido. Las que traiga el
+    // propio video (pistas del manifiesto HLS en hls.js o Safari) se desactivan para que no salgan dobles.
     const apply = () => {
-      for (const t of Array.from(v.textTracks)) t.mode = t.language === subtitle ? 'showing' : 'disabled';
+      const ours = Array.from(v.querySelectorAll<HTMLTrackElement>('track[data-cls]')).map((el) => el.track);
+      const chosen = subtitle === 'off' ? null : ours.find((t) => t.language === subtitle) ?? null;
+      for (const t of Array.from(v.textTracks)) {
+        const mode: TextTrackMode = t === chosen ? 'showing' : 'disabled';
+        if (t.mode !== mode) t.mode = mode;
+      }
     };
     apply();
     v.textTracks.addEventListener?.('addtrack', apply);
-    return () => v.textTracks.removeEventListener?.('addtrack', apply);
+    v.textTracks.addEventListener?.('change', apply);
+    return () => {
+      v.textTracks.removeEventListener?.('addtrack', apply);
+      v.textTracks.removeEventListener?.('change', apply);
+    };
   }, [subtitle]);
 
   // Los subtítulos suben cuando los controles están visibles, para no quedar tapados
+  const showUiRef = useRef(showUi);
+  showUiRef.current = showUi;
   const placeCues = useCallback(() => {
     const v = video.current;
     if (!v) return;
+    const line = showUiRef.current ? -4 : 'auto';
     for (const t of Array.from(v.textTracks)) {
       if (t.mode !== 'showing' || !t.cues) continue;
-      for (const c of Array.from(t.cues) as VTTCue[]) c.line = showUi ? -4 : 'auto';
+      for (const c of Array.from(t.cues) as VTTCue[]) if (c.line !== line) c.line = line;
     }
-  }, [showUi]);
-  useEffect(placeCues, [placeCues, subtitle]);
+  }, []);
+  useEffect(placeCues, [placeCues, subtitle, showUi]);
+  // El archivo .vtt se descarga al activarse: se recoloca cuando llega y cada vez que cambia la frase
+  useEffect(() => {
+    const v = video.current;
+    if (!v) return;
+    v.addEventListener('load', placeCues, true);
+    const tracks = Array.from(v.textTracks);
+    for (const t of tracks) t.addEventListener('cuechange', placeCues);
+    return () => {
+      v.removeEventListener('load', placeCues, true);
+      for (const t of tracks) t.removeEventListener('cuechange', placeCues);
+    };
+  }, [placeCues, subtitle]);
 
   // ---------------------------------------------------------------- Progreso y analítica
   const saveProgress = useCallback((beacon = false) => {
@@ -377,7 +405,7 @@ export function Player({ source, signedIn, autoPlay = true, variant = 'cinema', 
         aria-label={`${src.heading}${src.subheading ? ` — ${src.subheading}` : ''}`}
       >
         {src.subtitles.map((s) => (
-          <track key={s.url} kind={s.kind === 'captions' ? 'captions' : 'subtitles'} src={s.url} srcLang={s.language} label={s.label} onLoad={placeCues} />
+          <track key={s.url} data-cls="" kind={s.kind === 'captions' ? 'captions' : 'subtitles'} src={s.url} srcLang={s.language} label={s.label} onLoad={placeCues} />
         ))}
       </video>
 

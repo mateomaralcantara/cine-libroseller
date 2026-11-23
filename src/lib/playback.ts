@@ -136,7 +136,8 @@ export async function resolvePlayback(input: { contentType: ContentType; content
   }
 
   const subtitles = (await sql`select language, label, kind, url, is_default from subtitle_tracks
-    where owner_type = ${ownerForSubs.type} and owner_id = ${ownerForSubs.id} order by is_default desc, label`)
+    where owner_type = ${ownerForSubs.type} and owner_id = ${ownerForSubs.id} order by is_default desc, created_at desc`)
+    .filter((s, i, all) => all.findIndex((o) => String(o.language).toLowerCase() === String(s.language).toLowerCase()) === i)
     .map((s) => ({ language: s.language, label: s.label, kind: s.kind, url: s.url, default: s.is_default }));
 
   // Póster de respaldo: imagen del episodio o del título

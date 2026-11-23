@@ -55,6 +55,20 @@ function fixtures() {
   fs.writeFileSync(path.join(CDN, 'subs-es.vtt'), 'WEBVTT\n\n1\n00:00:01.000 --> 00:00:39.000\nSubtítulo de prueba: la petición en la montaña.\n');
 }
 
+/** El video de prueba también trae su propia pista de subtítulos en español dentro del HLS (como Mux):
+ *  sirve para comprobar que el reproductor no muestra dos veces el mismo idioma. */
+function hlsSubtitles() {
+  const master = path.join(CDN, 'hls/master.m3u8');
+  let m = fs.readFileSync(master, 'utf8');
+  if (m.includes('TYPE=SUBTITLES')) return;
+  fs.mkdirSync(path.join(CDN, 'hls/subs'), { recursive: true });
+  fs.writeFileSync(path.join(CDN, 'hls/subs/seg0.vtt'), 'WEBVTT\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n00:00:01.000 --> 00:00:39.000\nPista interna del video (no debe verse).\n');
+  fs.writeFileSync(path.join(CDN, 'hls/subs/index.m3u8'), '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:40\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:40.0,\nseg0.vtt\n#EXT-X-ENDLIST\n');
+  m = m.replace('#EXTM3U', '#EXTM3U\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Español (video)",LANGUAGE="es",DEFAULT=YES,AUTOSELECT=YES,URI="subs/index.m3u8"')
+    .replace(/#EXT-X-STREAM-INF:([^\n]*)/g, '#EXT-X-STREAM-INF:$1,SUBTITLES="subs"');
+  fs.writeFileSync(master, m);
+}
+
 const MIME = { '.m3u8': 'application/vnd.apple.mpegurl', '.m4s': 'video/iso.segment', '.mp4': 'video/mp4', '.webm': 'video/webm', '.jpg': 'image/jpeg', '.vtt': 'text/vtt' };
 function cdnServer() {
   return http.createServer((req, res) => {
@@ -113,6 +127,7 @@ async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   console.log('Preparando material de prueba, base de datos y servidores…');
   fixtures();
+  hlsSubtitles();
   const cdn = cdnServer();
   const fakeMux = startFakeMux(MUX_PORT);
   await resetDb();
@@ -204,6 +219,12 @@ async function main() {
       await a.check('input[name=is_default]');
       await a.click('button:has-text("Añadir")');
       await expectOk(a, 'Subtítulos añadidos.');
+      // Subirlo otra vez en el mismo idioma lo sustituye: nunca quedan dos archivos en español
+      await a.fill('input[name=language]', 'es'); await a.fill('input[name=label]', 'Español');
+      await a.setInputFiles('input[accept=".vtt,.srt,text/vtt"]', path.join(CDN, 'subs-es.vtt'));
+      await a.check('input[name=is_default]');
+      await a.click('button:has-text("Añadir")');
+      await expectOk(a, 'Subtítulos reemplazados');
       await a.selectOption('#to', 'published'); await a.click('button:has-text("Aplicar")');
       await expectOk(a, 'Estado actualizado.');
     });
@@ -302,8 +323,18 @@ async function main() {
       await v.getByRole('menuitemradio', { name: /360p/ }).click();
       await v.click('button[aria-label="Subtítulos"]');
       await v.getByRole('menuitemradio', { name: 'Español' }).click();
-      const showing = await v.evaluate(() => Array.from(document.querySelector('video').textTracks).some((t) => t.mode === 'showing'));
-      assert(showing, 'los subtítulos no se activaron');
+      // Exactamente una pista visible, y es la nuestra (no la que trae el propio video)
+      await v.waitForTimeout(800);
+      const subs = await v.evaluate(() => {
+        const vid = document.querySelector('video');
+        const all = Array.from(vid.textTracks);
+        const ours = Array.from(vid.querySelectorAll('track[data-cls]')).map((el) => el.track);
+        const showing = all.filter((t) => t.mode === 'showing');
+        return { total: all.length, ours: ours.length,  showing: showing.length, oursShowing: showing.every((t) => ours.includes(t)) };
+      });
+      assert(subs.ours === 1, `hay ${subs.ours} archivos de subtítulos en español (debería haber 1)`);
+      assert(subs.showing === 1 && subs.oursShowing, `subtítulos duplicados: ${JSON.stringify(subs)}`);
+      console.log(`    pistas de texto en el video: ${subs.total}, visibles: ${subs.showing}`);
       await v.click('button[aria-label="Velocidad"]');
       await v.getByRole('menuitemradio', { name: '1.5×' }).click();
       assert(await v.evaluate(() => document.querySelector('video').playbackRate) === 1.5, 'velocidad no aplicada');

@@ -11,7 +11,8 @@ const csp = [
   `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: https: ${extra}`.trim(),
-  `media-src 'self' blob: https: ${extra}`.trim(),
+  // data: lo usa hls.js para crear las pistas de texto del manifiesto (que el reproductor deja apagadas)
+  `media-src 'self' data: blob: https: ${extra}`.trim(),
   "font-src 'self' data:",
   // Mux: reproducción (stream/image), subidas directas (storage.googleapis.com / *.mux.com) y analítica
   `connect-src 'self' https://*.mux.com https://storage.googleapis.com https:${isDev ? ' ws: http://localhost:*' : ''} ${extra}`.trim(),

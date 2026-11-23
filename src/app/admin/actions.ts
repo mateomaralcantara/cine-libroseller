@@ -161,12 +161,15 @@ export async function uploadSubtitleAction(_p: ActionState, f: FormData): Promis
     const file = f.get('file');
     if (!(file instanceof File)) throw new UploadError('Selecciona un archivo .vtt o .srt.');
     const saved = await storeSubtitle('subtitles', file);
+    // Un solo archivo por idioma: si ya había uno, el nuevo lo sustituye (si no, se verían dos veces)
+    const previous = await sql`delete from subtitle_tracks where owner_type = ${ownerType} and owner_id = ${ownerId} and lower(language) = ${language} returning storage_path`;
+    for (const p of previous) await deleteObject(p.storage_path);
     const isDefault = f.get('is_default') === 'on';
     if (isDefault) await sql`update subtitle_tracks set is_default = false where owner_type = ${ownerType} and owner_id = ${ownerId}`;
     await sql`insert into subtitle_tracks (owner_type, owner_id, language, label, kind, url, storage_path, is_default)
       values (${ownerType}, ${ownerId}, ${language}, ${str(f, 'label').trim().slice(0, 60) || language}, ${str(f, 'kind') === 'captions' ? 'captions' : 'subtitles'}, ${saved.url}, ${saved.path}, ${isDefault})`;
     await audit(v.id, 'subtitle.upload', ownerType, ownerId, { language });
-    return 'Subtítulos añadidos.';
+    return previous.length ? 'Subtítulos reemplazados (ya había un archivo en ese idioma).' : 'Subtítulos añadidos.';
   });
 }
 
