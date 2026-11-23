@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { pageMetadata } from '@/lib/seo';
 import Link from 'next/link';
 import { sql } from '@/lib/db';
 import { visibleTitles } from '@/lib/catalog/public';
@@ -6,7 +7,7 @@ import { PosterCard } from '@/components/catalog';
 import { PageShell, EmptyState } from '@/components/PageShell';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Películas', description: 'Películas, cortometrajes y documentales originales.', alternates: { canonical: '/peliculas' } };
+export const metadata: Metadata = pageMetadata({ title: 'Películas', description: 'Películas, cortometrajes y documentales originales.', path: '/peliculas' });
 
 const TABS = [
   { key: '', label: 'Todo' }, { key: 'movie', label: 'Películas' }, { key: 'short', label: 'Cortometrajes' },

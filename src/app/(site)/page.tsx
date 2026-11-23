@@ -4,8 +4,27 @@ import { getHero, getHomeSections, upcomingReleases } from '@/lib/catalog/public
 import { Billboard, HomeRows, UpcomingCard } from '@/components/catalog';
 import { Rail } from '@/components/interactive';
 import { episodePath } from '@/lib/format';
+import type { Metadata } from 'next';
+import { pageMetadata, titleCover } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+const SITE_TITLE = 'CINE LIBROSELLER — El futuro del cine comienza aquí';
+const SITE_DESCRIPTION = 'Películas, series y producciones cinematográficas originales de Cine LibroSeller Studios. Drama, cine filosófico, suspenso y producciones híbridas.';
+
+/** Al compartir la portada del sitio se muestra la obra destacada (o la imagen de marca si aún no hay ninguna). */
+export async function generateMetadata(): Promise<Metadata> {
+  let hero: Awaited<ReturnType<typeof getHero>> = null;
+  try { hero = await getHero(); } catch { /* sin base de datos: imagen de marca */ }
+  const m = pageMetadata({
+    title: SITE_TITLE,
+    description: hero ? `Ahora en CINE LIBROSELLER: ${hero.title}. ${hero.synopsis_short ?? ''}` : SITE_DESCRIPTION,
+    path: '/',
+    image: hero ? titleCover(hero) : null,
+    imageAlt: hero?.title ?? SITE_TITLE,
+  });
+  return { ...m, title: { absolute: SITE_TITLE } };
+}
 
 export default async function Home() {
   const viewer = await getViewer();

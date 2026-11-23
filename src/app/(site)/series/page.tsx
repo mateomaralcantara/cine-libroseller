@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { pageMetadata } from '@/lib/seo';
 import Link from 'next/link';
 import { sql } from '@/lib/db';
 import { visibleTitles } from '@/lib/catalog/public';
@@ -6,7 +7,7 @@ import { PosterCard } from '@/components/catalog';
 import { PageShell, EmptyState } from '@/components/PageShell';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Series', description: 'Series originales de Cine LibroSeller Studios.', alternates: { canonical: '/series' } };
+export const metadata: Metadata = pageMetadata({ title: 'Series', description: 'Series originales de Cine LibroSeller Studios.', path: '/series' });
 
 export default async function SeriesIndex() {
   const items = await visibleTitles(sql`and t.type = 'series'`, undefined, 120);

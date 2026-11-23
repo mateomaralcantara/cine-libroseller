@@ -27,11 +27,10 @@ async function load(p: Props['params']) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const d = await load(params);
   if (!d) return { title: 'Episodio no encontrado' };
-  const thumb = d.episode.thumbnail?.url;
   return titleMetadata(d.series, {
     path: episodePath(d.series.slug, d.season.number, d.episode.number),
     title: `${d.episode.name} — ${d.series.title} (T${d.season.number}:E${d.episode.number})`,
-    description: d.episode.synopsis, image: thumb,
+    description: d.episode.synopsis ?? d.series.synopsis_short, image: d.episode.thumbnail, type: 'video.episode',
   });
 }
 

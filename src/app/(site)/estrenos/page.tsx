@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { pageMetadata } from '@/lib/seo';
 import Link from 'next/link';
 import { upcomingReleases } from '@/lib/catalog/public';
 import { Backdrop } from '@/components/catalog';
@@ -7,7 +8,7 @@ import { PageShell, EmptyState } from '@/components/PageShell';
 import { formatDate, titlePath } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Próximos estrenos', description: 'Calendario de estrenos de Cine LibroSeller.', alternates: { canonical: '/estrenos' } };
+export const metadata: Metadata = pageMetadata({ title: 'Próximos estrenos', description: 'Calendario de estrenos de Cine LibroSeller.', path: '/estrenos' });
 
 export default async function Releases() {
   const items = await upcomingReleases(50);

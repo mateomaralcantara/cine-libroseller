@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { pageMetadata } from '@/lib/seo';
 import Link from 'next/link';
 import { approvedComparisons, behindTheScenes } from '@/lib/catalog/public';
 import { getViewer } from '@/lib/auth/session';
@@ -8,7 +9,7 @@ import { PageShell, EmptyState } from '@/components/PageShell';
 import { TRAILER_KIND_LABEL, titlePath } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = { title: 'Detrás de cámaras', description: 'Cómo se hacen las producciones híbridas de Cine LibroSeller Studios.', alternates: { canonical: '/detras-de-camaras' } };
+export const metadata: Metadata = pageMetadata({ title: 'Detrás de cámaras', description: 'Cómo se hacen las producciones híbridas de Cine LibroSeller Studios.', path: '/detras-de-camaras' });
 
 const CAT: Record<string, string> = { actor: 'Intérprete', set: 'Escenario', character_design: 'Diseño de personaje', storyboard: 'Storyboard', vfx: 'VFX' };
 

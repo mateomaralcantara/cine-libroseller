@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getCharacter } from '@/lib/catalog/public';
 import { episodePath, titlePath } from '@/lib/format';
+import { pageMetadata, titleCover } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
 type Props = { params: Promise<{ title: string; character: string }> };
@@ -11,7 +12,12 @@ type Props = { params: Promise<{ title: string; character: string }> };
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const p = await params;
   const d = await getCharacter(p.title, p.character);
-  return d ? { title: `${d.character.name} — ${d.title.title}`, description: d.character.summary ?? undefined, alternates: { canonical: `/personajes/${p.title}/${p.character}` } } : { title: 'Personaje no encontrado' };
+  if (!d) return { title: 'Personaje no encontrado' };
+  const portrait = (d.character.image_url as string | null) ? { url: d.character.image_url as string } : d.gallery[0] ?? titleCover(d.title);
+  return pageMetadata({
+    title: `${d.character.name} — ${d.title.title}`, description: d.character.summary ?? d.title.synopsis_short,
+    path: `/personajes/${p.title}/${p.character}`, image: portrait, imageAlt: d.character.name, type: 'profile',
+  });
 }
 
 export default async function CharacterPage({ params }: Props) {
