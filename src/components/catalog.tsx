@@ -4,6 +4,7 @@ import type { TitleCard as Card, TitleDetail, EpisodeItem, HomeSection, Img } fr
 import { formatRuntime, formatClock, formatDate, titlePath, episodePath, TYPE_LABEL, yearOf, AI_LABEL, TRAILER_KIND_LABEL } from '@/lib/format';
 import { Rail, TrailerButton, NotifyForm, BookLink, TeaserBackground } from './interactive';
 import { Icon } from './player/icons';
+import { HoverTrailer } from './HoverTrailer';
 
 export function Backdrop({ img, priority = false, className = '' }: { img?: Img | null; priority?: boolean; className?: string }) {
   if (!img) return <div className={`absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,rgba(200,162,90,0.16),transparent_60%),linear-gradient(160deg,#17171d,#060608)] ${className}`} aria-hidden />;
@@ -32,6 +33,7 @@ export function PosterCard({ t }: { t: Card }) {
           <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[0.7rem] backdrop-blur">{t.episodes_available} {t.episodes_available === 1 ? 'episodio' : 'episodios'}</span>
         )}
         {t.access !== 'free' && <span className="absolute right-2 top-2 rounded-full bg-gold px-2 py-0.5 text-[0.7rem] font-semibold text-ink">{t.access === 'premium' ? 'Premium' : 'Con cuenta'}</span>}
+        {t.trailer_id && <HoverTrailer trailerId={t.trailer_id} title={t.title} />}
       </div>
       <p className="mt-2.5 truncate text-sm font-medium text-cream/90 group-hover:text-cream">{t.title}</p>
       <p className="truncate text-xs text-dim">{[TYPE_LABEL[t.type], t.genres[0]].filter(Boolean).join(' · ')}</p>

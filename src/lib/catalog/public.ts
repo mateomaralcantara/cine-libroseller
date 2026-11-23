@@ -11,6 +11,8 @@ export interface TitleCard {
   id: string; slug: string; type: string; title: string; tagline: string | null; synopsis_short: string | null;
   release_date: string | null; runtime_minutes: number | null; age_rating: string | null; access: string;
   genres: string[]; images: Images; episodes_available: number;
+  /** Tráiler principal publicado y con video listo (vista previa al pasar el mouse o tocar). */
+  trailer_id: string | null;
 }
 
 async function imagesFor(ownerType: string, ids: string[]): Promise<Record<string, Images & { gallery: Img[]; behind: Img[] }>> {
@@ -37,13 +39,18 @@ async function toCards(rows: Record<string, any>[]): Promise<TitleCard[]> { // e
     where tg.title_id in ${sql(ids)} order by g.position, g.name`;
   const eps = await sql`select e.title_id, count(*)::int as n from episodes e where e.title_id in ${sql(ids)} and ${VISIBLE('e')} group by e.title_id`;
   const epMap = Object.fromEntries(eps.map((e) => [e.title_id, e.n]));
+  const trailers = await sql`select distinct on (tr.title_id) tr.title_id, tr.id from trailers tr
+    join video_assets va on va.owner_type = 'trailer' and va.owner_id = tr.id and va.is_current and va.status in ('ready','published')
+    where tr.title_id in ${sql(ids)} and tr.is_published and tr.episode_id is null
+    order by tr.title_id, tr.is_primary desc, (tr.kind = 'trailer') desc, (tr.kind = 'teaser') desc, tr.position, tr.created_at`;
+  const trMap = Object.fromEntries(trailers.map((t) => [t.title_id, t.id as string]));
   return rows
     .map((r) => ({
       id: r.id, slug: r.slug, type: r.type, title: r.title, tagline: r.tagline, synopsis_short: r.synopsis_short,
       release_date: r.release_date ? String(r.release_date instanceof Date ? r.release_date.toISOString() : r.release_date).slice(0, 10) : null,
       runtime_minutes: r.runtime_minutes, age_rating: r.age_rating, access: r.access,
       genres: genres.filter((g) => g.title_id === r.id).map((g) => g.name),
-      images: imgs[r.id] ?? {}, episodes_available: epMap[r.id] ?? 0,
+      images: imgs[r.id] ?? {}, episodes_available: epMap[r.id] ?? 0, trailer_id: trMap[r.id] ?? null,
     }))
     // Un título sin póster ni imagen horizontal no se muestra en filas públicas
     .filter((c) => c.images.poster || c.images.backdrop || c.images.banner);

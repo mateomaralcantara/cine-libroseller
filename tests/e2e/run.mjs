@@ -294,6 +294,26 @@ async function main() {
       await v.keyboard.press('Escape');
       await v.locator('[role=dialog] video').waitFor({ state: 'detached' });
     });
+    const CARD = 'a[href="/series/los-convidados-al-agape"]';
+    const cardVideo = (page, playing) => page.waitForFunction(([sel, want]) => {
+      const x = document.querySelector(`${sel} video`);
+      return x && (want ? x.currentTime > 0.5 && !x.paused : x.paused);
+    }, [CARD, playing], { timeout: 20000 });
+    await step('reproduce el tráiler al pasar el mouse por la tarjeta y lo para al salir', async () => {
+      await v.goto(`${BASE}/series`);
+      await v.locator(`${CARD} video`).waitFor({ state: 'attached' });
+      await v.hover(CARD);
+      await cardVideo(v, true);
+      await v.getByText('Tráiler', { exact: true }).first().waitFor();
+      await v.waitForTimeout(600);
+      await shot(v, '02b-tarjeta-trailer');
+      // El botón de sonido no abre la ficha
+      await v.click(`${CARD} [data-preview-sound]`);
+      assert(new URL(v.url()).pathname === '/series', 'el botón de sonido navegó a la ficha');
+      assert(await v.evaluate((sel) => !document.querySelector(`${sel} video`).muted, CARD), 'el sonido no se activó');
+      await v.mouse.move(2, 2);
+      await cardVideo(v, false);
+    });
     await step('abre la ficha de la serie y el episodio', async () => {
       await v.goto(`${BASE}/series/los-convidados-al-agape`);
       await v.getByRole('heading', { name: 'Episodios' }).waitFor();
@@ -420,6 +440,16 @@ async function main() {
       assert(overflow <= 1, `desbordamiento horizontal de ${overflow}px`);
       await p.click('button:has-text("Sólo lo esencial")');
       await shot(p, '08-movil-portada');
+      // Primer toque: tráiler en la tarjeta (sin salir de la página); segundo toque: abre la ficha
+      await p.goto(`${BASE}/series`);
+      await p.locator(`${CARD} video`).waitFor({ state: 'attached' });
+      await p.tap(CARD);
+      await cardVideo(p, true);
+      assert(new URL(p.url()).pathname === '/series', 'el primer toque navegó en vez de mostrar el tráiler');
+      await p.getByText('Toca otra vez para abrir').waitFor();
+      await shot(p, '08b-movil-tarjeta-trailer');
+      await p.tap(CARD);
+      await p.waitForURL(/\/series\/los-convidados-al-agape$/);
       await p.goto(`${BASE}/series/los-convidados-al-agape/temporada-1/episodio-1/ver`);
       await waitPlaying(p, 1);
       await shot(p, '09-movil-reproductor');
